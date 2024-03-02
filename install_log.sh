@@ -156,14 +156,12 @@ ninja install
 
 # Install graphiler
 cd ${WORK_ROOT}/3rdparty/graphiler
+# Also need to include glog header, in case errors occur such as CHECK_GE not found.
+# Add #include <glog/logging.h> to src/ops/dgl_primitives/utils.h line 10
+sed -i '10 i #include <glog/logging.h>' src/ops/dgl_primitives/utils.h
 mkdir build
 cd build
 cmake -G Ninja .. -DCMAKE_PREFIX_PATH="$(python3 -c 'import torch.utils; print(torch.utils.cmake_prefix_path)');${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
-#################################################
-# !!! Manual changes, forgot the file name. !!! #
-#################################################
-# Also need to include glog header, if errors occur such as CHECK_GE not found.
-#include <glog/logging.h>
 
 # Install Sputnik
 cd ${WORK_ROOT}/3rdparty/sputnik
