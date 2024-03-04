@@ -34,12 +34,40 @@ pip3 install setuptools
 # Install python packages
 cd ${WORK_ROOT}/install
 bash ubuntu_install_python_package.sh
-pipe install --upgrade numpy
+# install libraries for python package on ubuntu
+pip3 install --upgrade \
+    attrs \
+    cloudpickle \
+    cython==0.29.33 \
+    decorator \
+    mypy \
+    numpy~=1.19.5 \
+    orderedset \
+    packaging \
+    Pillow \
+    psutil \
+    pytest==7.4.4 \
+    tlcpack-sphinx-addon==0.2.1 \
+    pytest-profiling \
+    pytest-xdist \
+    requests \
+    scipy~=1.6.0 \
+    Jinja2 \
+    synr==0.6.0 \
+    junitparser==2.4.2 \
+    six \
+    tornado \
+    pytest-lazy-fixture \
+    pandas==1.4.4 \
+    ogb \
+    rdflib==6.2.0 \
+    transformers==4.22.1
+# pipe install --upgrade numpy
 # Note: Cython 3.0 would not work for TVM.
-pip3 install --upgrade cython==0.29.33
-pip3 install --upgrade pytest==7.4.4
+# pip3 install --upgrade cython==0.29.33
+# pip3 install --upgrade pytest==7.4.4
 # ogb-1.3.5 has a bug, so ogb-1.3.6 or higher is needed.
-pip3 install --upgrade ogb
+# pip3 install --upgrade ogb
 
 # Install PyTorch with CUDA, successed for CUDA 12.2
 # Note: 
@@ -88,6 +116,7 @@ cd ${TMP_PATH}
 git clone --depth 1 --branch llvmorg-13.0.1 https://github.com/llvm/llvm-project.git
 cd llvm-project
 git switch -c v13.0.1
+rm -rf build
 mkdir build
 cd build
 cmake -G Ninja ../llvm \
@@ -124,6 +153,16 @@ cd ../python
 pip3 install -e .
 
 
+# Install glog
+cd ${WORK_ROOT}/3rdparty/glog
+rm -rf build
+mkdir build
+cd build
+# -DWITH_TLS=OFF is needed
+# ref: https://github.com/google/glog/issues/409#issuecomment-455836857
+cmake -G Ninja .. -DWITH_TLS=OFF -DCMAKE_INSTALL_PREFIX="${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON 
+ninja
+ninja install
 # # CMAKE_INSTALL_PREFIX
 # # CMAKE_FIND_PATH
 # cmake -G Ninja .. -DCMAKE_INSTALL_PREFIX="${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
@@ -148,6 +187,7 @@ pip3 install -e .
 # Install kineto
 cd ${WORK_ROOT}/3rdparty/kineto
 cd libkineto
+rm -rf build
 mkdir build
 cd build
 cmake -G Ninja .. -DCMAKE_INSTALL_PREFIX="${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
@@ -159,12 +199,19 @@ cd ${WORK_ROOT}/3rdparty/graphiler
 # Also need to include glog header, in case errors occur such as CHECK_GE not found.
 # Add #include <glog/logging.h> to src/ops/dgl_primitives/utils.h line 10
 sed -i '10 i #include <glog/logging.h>' src/ops/dgl_primitives/utils.h
+rm -rf build
 mkdir build
 cd build
 cmake -G Ninja .. -DCMAKE_PREFIX_PATH="$(python3 -c 'import torch.utils; print(torch.utils.cmake_prefix_path)');${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
+ninja
+mkdir -p ~/.dgl
+mv libgraphiler.so ~/.dgl/
+cd ..
+RUN pip3 install -e .
 
 # Install Sputnik
 cd ${WORK_ROOT}/3rdparty/sputnik
+rm -rf build
 mkdir build
 cd build
 cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TEST=ON -DBUILD_BENCHMARK=ON -DCUDA_ARCHS="60;70;75;80;86" -DCMAKE_PREFIX_PATH="${LOCAL_PATH}" -DCMAKE_INSTALL_PREFIX="${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
@@ -173,6 +220,7 @@ ninja install
 
 # Install dgSPARSE
 cd ${WORK_ROOT}/3rdparty/dgsparse
+rm -rf build
 mkdir build
 cd build
 cmake -G Ninja .. -DCMAKE_INSTALL_PREFIX="${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
@@ -199,6 +247,7 @@ sed -i 's/"70;75;80;86"/native/g' CMakeLists.txt
 # set_target_properties(taco-sddmm PROPERTIES CUDA_ARCHITECTURES native)
 # set_target_properties(taco-spmm PROPERTIES CUDA_ARCHITECTURES native)
 cd ..
+rm -rf build
 mkdir build
 cd build
 cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DCUDA=ON -DCMAKE_INSTALL_PREFIX="${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
