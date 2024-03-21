@@ -68,7 +68,7 @@ def bench_naive(
     feat_size=128,
     coarsening_factor=2,
 ):
-    indptr, indices, _ = g.adj_sparse("csc")
+    indptr, indices, _ = g.adj_tensors("csc")
     m = g.num_dst_nodes()
     n = g.num_src_nodes()
     nnz = g.num_edges()

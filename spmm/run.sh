@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export FLUSH_L2=ON
+
 # Benchmark
 echo "Running SpMM benchmark..."
 if [ ! -d data/ ]

@@ -694,7 +694,7 @@ def rgcn_tensorcore(
         etype_id = g.get_etype_id(str(etype))
         g_sub = g[str(etype)]
         m_sub, n_sub = g_sub.num_dst_nodes(), g_sub.num_src_nodes()
-        indptr, indices, _ = g_sub.adj_sparse(fmt="csc")
+        indptr, indices, _ = g_sub.adj_tensors(fmt="csc")
         csf_indptr_0.append(csf_indptr_0[-1] + m_sub)
         csf_indices_0.append(th.arange(m_sub, dtype=th.int32))
         csf_indptr_1.append(csf_indptr_1[-1][-1] + indptr[1:])

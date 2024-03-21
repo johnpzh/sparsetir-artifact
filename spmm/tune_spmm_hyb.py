@@ -35,6 +35,8 @@ from tvm.sparse import (
 import tvm.sparse
 from utils import get_dataset
 from sparsetir_artifact import profile_tvm_ms
+import math
+import pandas as pd
 
 
 @T.prim_func
@@ -95,7 +97,7 @@ def csr2ell_index_map(i, j):
     return 0, i, j
 
 
-cached_bucketing_format = None
+# cached_bucketing_format = None
 
 
 def bench_hyb(
@@ -114,13 +116,19 @@ def bench_hyb(
     m = g.num_dst_nodes()
     n = g.num_src_nodes()
     nnz = g.num_edges()
-    global cached_bucketing_format
-    if cached_bucketing_format is None:
-        indptr_nd = tvm.nd.array(indptr.numpy(), device=tvm.cpu())
-        indices_nd = tvm.nd.array(indices.numpy(), device=tvm.cpu())
-        cached_bucketing_format = column_part_hyb(
-            m, n, indptr_nd, indices_nd, num_col_parts, bucket_sizes
-        )
+    # Changed by Zhen Peng on 3/21/2024
+    # global cached_bucketing_format
+    # if cached_bucketing_format is None:
+    #     indptr_nd = tvm.nd.array(indptr.numpy(), device=tvm.cpu())
+    #     indices_nd = tvm.nd.array(indices.numpy(), device=tvm.cpu())
+    #     cached_bucketing_format = column_part_hyb(
+    #         m, n, indptr_nd, indices_nd, num_col_parts, bucket_sizes
+    #     )
+    indptr_nd = tvm.nd.array(indptr.numpy(), device=tvm.cpu())
+    indices_nd = tvm.nd.array(indices.numpy(), device=tvm.cpu())
+    cached_bucketing_format = column_part_hyb(
+        m, n, indptr_nd, indices_nd, num_col_parts, bucket_sizes
+    )
     row_indices, col_indices, mask = cached_bucketing_format
 
     # rewrite csrmm
@@ -237,55 +245,176 @@ def bench_hyb(
 
     # evaluate time
     dur = profile_tvm_ms(f, args)
-    print("tir hyb time: {:.5f} ms".format(dur))
+    print("tir hyb time: {:.6f} ms".format(dur))
+    
+    return dur
+
+
+
+
+def get_bucket_config(max_bucket_width: int):
+    power = math.ceil(math.log2(max_bucket_width))
+    bucket_config = [int(2**i) for i in range(power + 1)]
+    return bucket_config
+
+
+def save_statistics(name: str, 
+                    feat_size: int, 
+                    execution_times: list,
+                    PARTITIONS: list,
+                    MAX_BUCKET_SIZES: list):
+    columns = {
+        "num_partitions": PARTITIONS,
+    }
+    min_exe_time = execution_times[0][0]
+    best_width_ind = 0
+    best_part_ind = 0
+    for i, max_bucket_width in enumerate(MAX_BUCKET_SIZES):
+        columns[F"max_bucket_width:{max_bucket_width}"] = execution_times[i]
+        lowest = min(execution_times[i])
+        if lowest < min_exe_time:
+            min_exe_time = lowest
+            best_width_ind = i
+            best_part_ind = execution_times[i].index(lowest)
+
+
+    dataFrame = pd.DataFrame(data=columns)
+    log = F"output_tune_{name}_feat{feat_size}.csv"
+    print(dataFrame)
+    dataFrame.to_csv(log)
+
+    summary = {
+        "dataset": [name],
+        "feature_size": [feat_size],
+        "best_exe_time": [min_exe_time],
+        "best_num_partitions": [PARTITIONS[best_part_ind]],
+        "best_bucket_width": [MAX_BUCKET_SIZES[best_width_ind]]
+    }
+    dataFrame = pd.DataFrame(data=summary)
+    print(dataFrame)
+    dataFrame.to_csv(log, mode='a')
+
+    print(F"#### Saved to {log} .")
+
 
 
 col_part_config = {
+    "cora": 1,
+    "citeseer": 1,
+    "pubmed": 1,
+    "ppi": 16,
     "arxiv": 1,
     "proteins": 8,
-    "pubmed": 1,
-    "citeseer": 1,
-    "cora": 1,
-    "ppi": 16,
     "reddit": 8,
     "products": 16,
 }
 
 bucketing_config = {
-    "arxiv": [1, 2, 4, 8, 16, 32],
-    "proteins": [1, 2, 4, 8, 16, 32, 64, 128, 256],
-    "pubmed": [1, 2, 4, 8, 16, 32],
-    "citeseer": [1, 2, 4],
     "cora": [1, 2, 4],
-    "ppi": [1, 2, 4, 8, 16, 32],
-    "products": [1, 2, 4, 8, 16, 32],
-    "reddit": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+    "citeseer": [1, 2, 4],
+    "pubmed": [1, 2, 4, 8], # changed, better
+    "ppi": [1, 2, 4, 8, 16, 32, 64], # changed
+    "arxiv": [1, 2, 4, 8, 16], # changed
+    "proteins": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024], # changed
+    "reddit": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024], # changed
+    "products": [1, 2, 4, 8, 16, 32, 64], # not used
+}
+# bucketing_config = {
+#     "cora": [1, 2, 4],
+#     "citeseer": [1, 2, 4],
+#     "pubmed": [1, 2, 4, 8, 16, 32],
+#     "ppi": [1, 2, 4, 8, 16, 32],
+#     "arxiv": [1, 2, 4, 8, 16, 32],
+#     "proteins": [1, 2, 4, 8, 16, 32, 64, 128, 256],
+#     "reddit": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+#     "products": [1, 2, 4, 8, 16, 32],
+# }
+
+PARTITIONS_SET = {
+    "cora": [1, 2, 4, 8],
+    "citeseer": [1, 2, 4, 8],
+    "pubmed": [1, 2, 4, 8],
+    "ppi": [1, 2, 4, 8, 16, 32, 64],
+    "arxiv": [1, 2, 4, 8],
+    "proteins": [1, 2, 4, 8, 16, 32],
+    "reddit": [1, 2, 4, 8, 16, 32],
 }
 
+MAX_BUCKET_SIZES_SET = {
+    "cora": [1, 2, 4, 8, 16],
+    "citeseer": [1, 2, 4, 8, 16],
+    "pubmed": [4, 8, 16, 32, 64, 128, 256],
+    "ppi": [4, 8, 16, 32, 64, 128],
+    "arxiv": [4, 8, 16, 32, 64, 128],
+    "proteins": [32, 64, 128, 256, 512, 1024],
+    "reddit": [64, 128, 256, 512, 1024, 2048],
+}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
     parser.add_argument("--dataset", "-d", type=str, default="arxiv", help="dataset name")
-    parser.add_argument("--implicit-unroll", "-i", action="store_true", help="use implicit unroll")
+    parser.add_argument("--implicit-unroll", "-i", action="store_true", default=True, help="use implicit unroll")
     args = parser.parse_args()
     name = args.dataset
     g = get_dataset(name)
 
+    # Pandas settings
+    pd.set_option("display.width", 800)
+    pd.set_option("display.max_columns", None)
+
+    # Tuning
+    # PARTITIONS          = [1, 2]
+    # MAX_BUCKET_SIZES    = [1, 2]
+    PARTITIONS          = PARTITIONS_SET[name]
+    MAX_BUCKET_SIZES    = MAX_BUCKET_SIZES_SET[name]
     for feat_size in [32, 64, 128, 256, 512]:
-        print("feat_size = ", feat_size)
-        try:
-            x = th.rand((g.num_src_nodes(), feat_size))
-            y_golden = dgl.ops.copy_u_sum(g, x)
-            bench_hyb(
-                g,
-                x,
-                y_golden,
-                feat_size=feat_size,
-                bucket_sizes=bucketing_config[name],
-                coarsening_factor=2,
-                num_col_parts=col_part_config[name],
-                use_implicit_unroll=args.implicit_unroll,
-            )
-        except Exception as e:
-            print("OOM")
-            print(e, file=sys.stderr)
+        execution_times = []
+        x = th.rand((g.num_src_nodes(), feat_size))
+        y_golden = dgl.ops.copy_u_sum(g, x)
+        for width in MAX_BUCKET_SIZES:
+            width_exe_times = []
+            for num_p in PARTITIONS:
+                # Get bucket_config
+                bucket_config = get_bucket_config(width)
+                print(F"#### data: {name} feat_size: {feat_size} num_partitions: {num_p} max_bucket_width: {width} bucket_config: {bucket_config}")
+                try:
+                    exe_time = bench_hyb(
+                        g,
+                        x,
+                        y_golden,
+                        feat_size=feat_size,
+                        bucket_sizes=bucket_config,
+                        coarsening_factor=2,
+                        num_col_parts=num_p,
+                        use_implicit_unroll=args.implicit_unroll,
+                    )
+                    # width_exe_times.append(exe_time)
+                    width_exe_times.append(float("{:.6f}".format(exe_time)))
+                except Exception as e:
+                    width_exe_times.append(math.inf)
+                    print(e, file=sys.stderr)
+            execution_times.append(width_exe_times)
+        
+        # Statistics
+        save_statistics(name, feat_size, execution_times, PARTITIONS, MAX_BUCKET_SIZES)
+
+
+
+    # for feat_size in [32, 64, 128, 256, 512]:
+    #     print("feat_size = ", feat_size)
+    #     try:
+    #         x = th.rand((g.num_src_nodes(), feat_size))
+    #         y_golden = dgl.ops.copy_u_sum(g, x)
+    #         bench_hyb(
+    #             g,
+    #             x,
+    #             y_golden,
+    #             feat_size=feat_size,
+    #             bucket_sizes=bucketing_config[name],
+    #             coarsening_factor=2,
+    #             num_col_parts=col_part_config[name],
+    #             use_implicit_unroll=args.implicit_unroll,
+    #         )
+    #     except Exception as e:
+    #         print("OOM")
+    #         print(e, file=sys.stderr)

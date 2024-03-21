@@ -9,7 +9,7 @@ def print_edgelist(edgelist):
             print(F"({row_ind}, {col_ind})")
 
 def get_basics(graph):
-    csr_indptr, csr_indices, _ = graph.adj_sparse(fmt='csr')
+    csr_indptr, csr_indices, _ = graph.adj_tensors(fmt='csr')
     num_rows = len(csr_indptr) - 1
     assert num_rows == graph.num_nodes()
     num_edges = len(csr_indices)

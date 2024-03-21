@@ -14,7 +14,8 @@ datasets=(\
 
 start_time=$(date +%s)
 
-data_dir="/raid/peng599/spmm/datasets"
+data_dir="/home/peng599/spmm/datasets"
+
 
 for dataset in "${datasets[@]}"; do
     echo ""

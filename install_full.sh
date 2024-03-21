@@ -3,37 +3,74 @@ set -u # exit the shell script if there was any undefined variables.
 set -o pipefail # If a command in a pipeline failed, the pipeline would return the non-zero exit status.
 set -x # print each command before executing it.
 
-export LOCAL_PATH=/path/to/local/
-export WORK_ROOT=/path/to/sparsetir-artifact
-export TMP_PATH=/path/to/tmp
+export LOCAL_PATH="/home/peng599/local"
+export WORK_ROOT="/home/peng599/pppp/vscode/sparsetir-artifact_mac"
+export TMP_PATH="/tmp/Downloads"
 
 export PATH="${LOCAL_PATH}/bin:${PATH}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/lib:/usr/local/lib64:/usr/local/cuda/lib64:${LOCAL_PATH}/lib"
 
+mkdir -p "${LOCAL_PATH}/bin"
+
+export CXXFLAGS="-fPIC -I${LOCAL_PATH}/include"
+export CFLAGS="-fPIC -I${LOCAL_PATH}/include"
+export CPLUS_INCLUDE_PATH="${LOCAL_PATH}/include"
+export C_INCLUDE_PATH="${LOCAL_PATH}/include"
+
 # [docker only] Ubuntu install core
 
 # [if needed] install cmake >=3.24
-
-# install python 3.9
-# Install miniconda
-# Link: https://docs.anaconda.com/free/miniconda/
 cd ${TMP_PATH}
-mkdir -p "${LOCAL_PATH}/miniconda3"
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ${LOCAL_PATH}/miniconda3/miniconda.sh
-bash ${LOCAL_PATH}/miniconda3/miniconda.sh -b -u -p ${LOCAL_PATH}/miniconda3
-rm -rf ${LOCAL_PATH}/miniconda3/miniconda.sh
-${LOCAL_PATH}/miniconda3/bin/conda init bash
-${LOCAL_PATH}/miniconda3/bin/conda init zsh
-# Create virtual environment
-conda create --name sparsetir
-conda activate sparsetir
-conda install python=3.9
-conda install pip
-pip3 install setuptools
+wget https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3.tar.gz
+tar zxvf cmake-3.28.3.tar.gz
+cd cmake-3.28.3
+mkdir build
+cd build
+../bootstrap --prefix=${LOCAL_PATH} -- -DCMAKE_USE_OPENSSL=OFF
+make -j 
+make install
+
+# Install Ninja
+cd ${TMP_PATH}
+wget https://github.com/ninja-build/ninja/archive/refs/tags/v1.11.1.tar.gz -O ninja-1.11.1.tar.gz
+tar zxvf ninja-1.11.1.tar.gz
+cd ninja-1.11.1
+mkdir build
+cd build
+cmake .. -DCMAKE_INSTALL_PREFIX="${LOCAL_PATH}" -DCMAKE_COLOR_DIAGNOSTICS=ON
+make -j
+make install
+
+# Install NCurses needed by TVM
+cd ${TMP_PATH}
+wget https://invisible-island.net/archives/ncurses/ncurses-6.4.tar.gz
+tar zxvf ncurses-6.4.tar.gz
+cd ncurses-6.4
+./configure --prefix=${LOCAL_PATH} --enable-ext-colors --enable-sp-funcs --enable-term-driver --enable-shared
+make -j
+make install
+
+
+# # install python 3.9
+# # Install miniconda
+# # Link: https://docs.anaconda.com/free/miniconda/
+# cd ${TMP_PATH}
+# mkdir -p "${LOCAL_PATH}/miniconda3"
+# wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ${LOCAL_PATH}/miniconda3/miniconda.sh
+# bash ${LOCAL_PATH}/miniconda3/miniconda.sh -b -u -p ${LOCAL_PATH}/miniconda3
+# rm -rf ${LOCAL_PATH}/miniconda3/miniconda.sh
+# ${LOCAL_PATH}/miniconda3/bin/conda init bash
+# ${LOCAL_PATH}/miniconda3/bin/conda init zsh
+# # Create virtual environment
+# conda create --name sparsetir
+# conda activate sparsetir
+# conda install python=3.9
+# conda install pip
+# pip3 install setuptools
 
 # Install python packages
 cd ${WORK_ROOT}/install
-bash ubuntu_install_python_package.sh
+# bash ubuntu_install_python_package.sh
 # install libraries for python package on ubuntu
 pip3 install --upgrade \
     attrs \
@@ -72,7 +109,8 @@ pip3 install --upgrade \
 # Install PyTorch with CUDA, successed for CUDA 12.2
 # Note: 
 # I uninstalled all torch* packages at first, then installed the author's torch-1.12.0, then installed Triton.
-pip3 install --upgrade torch==1.12.0 torchvision==0.13.0 torchaudio==0.12.0 --extra-index-url https://download.pytorch.org/whl/cu116
+# pip3 install --upgrade torch==1.12.0 torchvision==0.13.0 torchaudio==0.12.0 --extra-index-url https://download.pytorch.org/whl/cu116
+pip3 install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
 ## Test commands
 # python3 -c "import torch;print(torch.cuda.nccl.version())"
 # python3 -c "import torch; print(torch.__version__)"
@@ -106,9 +144,18 @@ ln -s ${LOCAL_PATH}/repos/cudnn-9.0.0.312/lib/* ${LOCAL_PATH}/lib/
 ln -s ${LOCAL_PATH}/repos/cudnn-9.0.0.312/include/* ${LOCAL_PATH}/include/
 
 # Install dgl and pytorch geometric
-cd ${WORK_ROOT}/install
-bash install_dgl.sh
-bash install_pyg.sh
+# cd ${WORK_ROOT}/install
+# bash install_dgl.sh
+# bash install_pyg.sh
+pip3 install  dgl -f https://data.dgl.ai/wheels/cu121/repo.html
+# pip3 install dgl==1.0.1 -f https://data.dgl.ai/wheels/cu121/repo.html
+# pip3 install  dglgo -f https://data.dgl.ai/wheels-test/repo.html
+# pip install  dgl==1.0.1 -f https://data.dgl.ai/wheels/cu117/repo.html
+mkdir -p ~/.dgl/
+echo '{"backend": "pytorch"}' > ~/.dgl/config.json
+python3 -c 'import dgl; print(dgl.__path__)'
+pip3 install torch_geometric
+pip3 install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cu121.html
 
 # Install LLVM 13
 # ref: https://github.com/uwsampl/sparsetir-artifact/blob/main/install/ubuntu2004_install_llvm.sh
@@ -180,7 +227,6 @@ make install
 
 # Install torchsparse, needing sparsehash, pytorch
 # path to sparsehash
-export CPLUS_INCLUDE_PATH="${LOCAL_PATH}/include"
 cd ${WORK_ROOT}/3rdparty/torchsparse
 pip3 install -e .
 
@@ -196,9 +242,6 @@ ninja install
 
 # Install graphiler
 cd ${WORK_ROOT}/3rdparty/graphiler
-# Also need to include glog header, in case errors occur such as CHECK_GE not found.
-# Add #include <glog/logging.h> to src/ops/dgl_primitives/utils.h line 10
-sed -i '10 i #include <glog/logging.h>' src/ops/dgl_primitives/utils.h
 rm -rf build
 mkdir build
 cd build
@@ -207,7 +250,8 @@ ninja
 mkdir -p ~/.dgl
 mv libgraphiler.so ~/.dgl/
 cd ..
-RUN pip3 install -e .
+pip3 install -e .
+python3 -c "from graphiler import EdgeBatchDummy, NodeBatchDummy, mpdfg_builder, update_all"
 
 # Install Sputnik
 cd ${WORK_ROOT}/3rdparty/sputnik

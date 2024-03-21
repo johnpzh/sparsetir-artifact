@@ -3,6 +3,7 @@
 *.log
 *.err
 *.csv
+*.cvs
 *.pdf
 *.dat
 .vscode/

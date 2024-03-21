@@ -10,7 +10,7 @@ if not os.path.exists("data"):
 for dataset_name in ["cora", "citeseer", "arxiv", "pubmed", "ppi", "reddit", "proteins"]:
     print("dumping dataset {}".format(dataset_name))
     g = get_dataset(dataset_name)
-    indptr, indices, _ = g.adj_sparse("csc")
+    indptr, indices, _ = g.adj_tensors("csc")
     shp = np.array(
         [g.num_dst_nodes(), g.num_src_nodes(), g.num_edges()], dtype=np.int32
     )

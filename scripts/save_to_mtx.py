@@ -9,7 +9,10 @@ def print_edgelist(edgelist):
 
 
 def get_basics(graph):
-    csr_indptr, csr_indices, _ = graph.adj_sparse(fmt='csr')
+    #### .adj_sparse() deprecated, use .adj_tensors()
+    # csr_indptr, csr_indices, _ = graph.adj_sparse(fmt='csr')
+    csr_indptr, csr_indices, _ = graph.adj_tensors(fmt='csr')
+    # csr_indptr, csr_indices, _ = graph.adj_external(scipy_fmt='csr')
     num_rows = len(csr_indptr) - 1
     assert num_rows == graph.num_nodes()
     num_edges = len(csr_indices)
@@ -46,7 +49,10 @@ def save_to_mtx_v1(num_rows,
 
 def save_to_mtx_v2(graph,
                    filename):
-    csr_indptr, csr_indices, _ = graph.adj_sparse(fmt='csr')
+    #### .adj_sparse() deprecated, use .adj_tensors()
+    # csr_indptr, csr_indices, _ = graph.adj_sparse(fmt='csr')
+    csr_indptr, csr_indices, _ = graph.adj_tensors(fmt='csr')
+    # csr_indptr, csr_indices, _ = graph.adj_external(scipy_fmt='csr')
     num_rows = len(csr_indptr) - 1
     assert num_rows == graph.num_nodes()
     num_edges = len(csr_indices)
@@ -86,7 +92,8 @@ if __name__ == "__main__":
     # for name in datasets:
     #     graph = get_dataset(name)
     if len(sys.argv) < 3:
-        raise RuntimeError(F"Usage: {sys.argv[0]} <dataset_name> <output.mtx>")
+        print(F"Usage: {sys.argv[0]} <dataset_name> <output.mtx>")
+        exit(-1)
     
     dataset_name = sys.argv[1]
     out_filename = sys.argv[2]

@@ -206,7 +206,7 @@ def create_kernels(g, feat_sizes, bucket_sizes=[], num_col_parts=1):
 
     for forward in [True]:  # [True, False]
         num_buckets = len(bucket_sizes)
-        indptr, indices, _ = g.adj_sparse("csc")
+        indptr, indices, _ = g.adj_tensors("csc")
         m = g.num_dst_nodes()
         n = g.num_src_nodes()
         nnz = g.num_edges()

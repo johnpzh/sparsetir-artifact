@@ -4,6 +4,7 @@ import os
 from torch.profiler import profile, ProfilerActivity, schedule
 from typing import List, Callable, Any, Tuple, Union
 import subprocess
+from scipy.stats import variation
 
 __all__ = ["profile_pytorch_ms", "profile_tvm_ms", "plot"]
 
@@ -50,18 +51,31 @@ def profile_pytorch_ms(f: Callable[[], None]) -> float:
         for _ in range(n_warmup):
             f()
         # Benchmark
-        for i in range(n_repeat):
-            # we clear the L2 cache before each run
-            cache.zero_()
-            # record time of `fn`
-            start_event[i].record()
-            f()
-            end_event[i].record()
-        # Record clocks
-        torch.cuda.synchronize()
-        times = torch.tensor(
-            [s.elapsed_time(e) for s, e in zip(start_event, end_event)])
-        dur = torch.mean(times).item()
+        while True:
+            # Repeat when coefficient of variation is too large
+            for i in range(n_repeat):
+                # we clear the L2 cache before each run
+                cache.zero_()
+                # record time of `fn`
+                start_event[i].record()
+                f()
+                end_event[i].record()
+            # Record clocks
+            torch.cuda.synchronize()
+            times = torch.tensor(
+                [s.elapsed_time(e) for s, e in zip(start_event, end_event)])
+            dur = torch.mean(times).item()
+            # Added by Zhen Peng on 3/18/2024
+            print(F"#### Run {len(times)} times (warm up {n_warmup}) in ms:")
+            for t in times:
+                print("#### {:.6}".format(t))
+            cv = variation(times)
+            print("#### Coefficent_of_Variation: {:.2%}".format(cv))
+            if cv > 0.10:
+                print(F"#### Coefficent_of_Variation too large, rerun ...")
+            else:
+                break
+            # End Added
     else:
         with profile(activities=[ProfilerActivity.CUDA],
                      schedule=schedule(wait=n_wait,

@@ -241,26 +241,36 @@ def bench_hyb(
 
 
 col_part_config = {
+    "cora": 1,
+    "citeseer": 1,
+    "pubmed": 1,
+    "ppi": 16,
     "arxiv": 1,
     "proteins": 8,
-    "pubmed": 1,
-    "citeseer": 1,
-    "cora": 1,
-    "ppi": 16,
     "reddit": 8,
     "products": 16,
 }
 
 bucketing_config = {
-    "arxiv": [1, 2, 4, 8, 16, 32],
-    "proteins": [1, 2, 4, 8, 16, 32, 64, 128, 256],
-    "pubmed": [1, 2, 4, 8, 16, 32],
-    "citeseer": [1, 2, 4],
     "cora": [1, 2, 4],
-    "ppi": [1, 2, 4, 8, 16, 32],
-    "products": [1, 2, 4, 8, 16, 32],
-    "reddit": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+    "citeseer": [1, 2, 4],
+    "pubmed": [1, 2, 4, 8], # changed, better
+    "ppi": [1, 2, 4, 8, 16, 32, 64], # changed
+    "arxiv": [1, 2, 4, 8, 16], # changed
+    "proteins": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024], # changed
+    "reddit": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024], # changed
+    "products": [1, 2, 4, 8, 16, 32, 64], # not used
 }
+# bucketing_config = {
+#     "cora": [1, 2, 4],
+#     "citeseer": [1, 2, 4],
+#     "pubmed": [1, 2, 4, 8, 16, 32],
+#     "ppi": [1, 2, 4, 8, 16, 32],
+#     "arxiv": [1, 2, 4, 8, 16, 32],
+#     "proteins": [1, 2, 4, 8, 16, 32, 64, 128, 256],
+#     "reddit": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+#     "products": [1, 2, 4, 8, 16, 32],
+# }
 
 
 if __name__ == "__main__":
