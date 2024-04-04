@@ -3,10 +3,10 @@
 *.log
 *.err
 *.csv
-*.cvs
 *.pdf
 *.dat
 .vscode/
 *.pyc
 __pycache__/
 *.egg-info/
+data

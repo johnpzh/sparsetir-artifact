@@ -334,7 +334,8 @@ PARTITIONS_SET = {
     "cora": [1, 2, 4, 8],
     "citeseer": [1, 2, 4, 8],
     "pubmed": [1, 2, 4, 8],
-    "ppi": [1, 2, 4, 8, 16, 32, 64],
+    "ppi": [32, 64],
+    # "ppi": [1, 2, 4, 8, 16, 32, 64],
     "arxiv": [1, 2, 4, 8],
     "proteins": [1, 2, 4, 8, 16, 32, 64, 128],
     "reddit": [1, 2, 4, 8, 16, 32, 64, 128],
@@ -344,7 +345,8 @@ MAX_BUCKET_SIZES_SET = {
     "cora": [1, 2, 4, 8, 16],
     "citeseer": [1, 2, 4, 8, 16],
     "pubmed": [4, 8, 16, 32, 64, 128, 256],
-    "ppi": [4, 8, 16, 32, 64, 128],
+    "ppi": [64, 128],
+    # "ppi": [4, 8, 16, 32, 64, 128],
     "arxiv": [4, 8, 16, 32, 64, 128],
     "proteins": [32, 64, 128, 256, 512],
     "reddit": [16, 32, 64, 128, 256, 512, 1024],
@@ -352,7 +354,7 @@ MAX_BUCKET_SIZES_SET = {
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
-    parser.add_argument("--dataset", "-d", type=str, default="arxiv", help="dataset name")
+    parser.add_argument("--dataset", "-d", type=str, default="ppi", help="dataset name")
     parser.add_argument("--implicit-unroll", "-i", action="store_true", default=True, help="use implicit unroll")
     args = parser.parse_args()
     name = args.dataset
@@ -367,7 +369,8 @@ if __name__ == "__main__":
     # MAX_BUCKET_SIZES    = [1, 2]
     PARTITIONS          = PARTITIONS_SET[name]
     MAX_BUCKET_SIZES    = MAX_BUCKET_SIZES_SET[name]
-    for feat_size in [32, 64, 128, 256, 512]:
+    for feat_size in [32]:
+    # for feat_size in [32, 64, 128, 256, 512]:
         execution_times = []
         x = th.rand((g.num_src_nodes(), feat_size))
         y_golden = dgl.ops.copy_u_sum(g, x)

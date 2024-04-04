@@ -1,0 +1,35 @@
+# Dataset names, total 242 matrices
+MATRICES=( \
+"Belcastro/mouse_gene.tar.gz" \
+"Bodendiek/CurlCurl_1.tar.gz" \
+"Bodendiek/CurlCurl_4.tar.gz" \
+"Boeing/bcsstk39.tar.gz" \
+"Boeing/ct20stif.tar.gz" \
+"Boeing/pct20stif.tar.gz" \
+"Boeing/pwtk.tar.gz" \
+"Botonakis/thermomech_dK.tar.gz" \
+"Bova/rma10.tar.gz" \
+"Buss/12month1.tar.gz" \
+"Chen/pkustk05.tar.gz" \
+"Chen/pkustk06.tar.gz" \
+"Chen/pkustk07.tar.gz" \
+"DIMACS10/144.tar.gz" \
+"DIMACS10/333SP.tar.gz" \
+"DIMACS10/adaptive.tar.gz" \
+"DIMACS10/AS365.tar.gz" \
+"DIMACS10/asia_osm.tar.gz" \
+"DIMACS10/channel-500x100x100-b050.tar.gz" \
+"DIMACS10/citationCiteseer.tar.gz" \
+"DIMACS10/coPapersCiteseer.tar.gz" \
+"DIMACS10/coPapersDBLP.tar.gz" \
+"DIMACS10/delaunay_n22.tar.gz" \
+"DIMACS10/delaunay_n23.tar.gz" \
+"DIMACS10/fl2010.tar.gz" \
+"DIMACS10/germany_osm.tar.gz" \
+"DIMACS10/hugetric-00010.tar.gz" \
+"DIMACS10/hugetric-00020.tar.gz" \
+"DIMACS10/il2010.tar.gz" \
+"DIMACS10/kron_g500-logn18.tar.gz" \
+"DIMACS10/kron_g500-logn19.tar.gz" \
+"DIMACS10/kron_g500-logn20.tar.gz" \
+)

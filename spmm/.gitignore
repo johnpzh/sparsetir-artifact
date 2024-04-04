@@ -3,3 +3,5 @@ dataset
 data/
 log
 *.log
+logs_*/
+output*

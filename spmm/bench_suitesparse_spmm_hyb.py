@@ -17,6 +17,7 @@
 
 import dgl
 import tvm
+import os
 import sys
 import tvm.testing
 import tvm.tir as tir
@@ -37,6 +38,7 @@ from utils import get_dataset
 from sparsetir_artifact import profile_tvm_ms
 import math
 import pandas as pd
+from matrix_market import MTX
 
 
 @T.prim_func
@@ -103,7 +105,8 @@ def csr2ell_index_map(i, j):
 def bench_hyb(
     g,
     x,
-    y_golden,
+    # y_golden,
+    y_ndarray,
     feat_size=128,
     bucket_sizes=[],
     coarsening_factor=2,
@@ -124,8 +127,12 @@ def bench_hyb(
     #     cached_bucketing_format = column_part_hyb(
     #         m, n, indptr_nd, indices_nd, num_col_parts, bucket_sizes
     #     )
-    indptr_nd = tvm.nd.array(indptr.numpy(), device=tvm.cpu())
-    indices_nd = tvm.nd.array(indices.numpy(), device=tvm.cpu())
+
+    #
+    indptr_nd = tvm.nd.array(indptr, device=tvm.cpu())
+    indices_nd = tvm.nd.array(indices, device=tvm.cpu())
+    # indptr_nd = tvm.nd.array(indptr.numpy(), device=tvm.cpu())
+    # indices_nd = tvm.nd.array(indices.numpy(), device=tvm.cpu())
     cached_bucketing_format = column_part_hyb(
         m, n, indptr_nd, indices_nd, num_col_parts, bucket_sizes
     )
@@ -241,15 +248,14 @@ def bench_hyb(
 
     # test accuracy
     f(*args)
-    tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_golden.numpy(), rtol=1e-4)
+    tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
+    # tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_golden.numpy(), rtol=1e-4)
 
     # evaluate time
     dur = profile_tvm_ms(f, args)
     print("tir hyb time: {:.6f} ms".format(dur))
-    
+
     return dur
-
-
 
 
 def get_bucket_config(max_bucket_width: int):
@@ -258,11 +264,14 @@ def get_bucket_config(max_bucket_width: int):
     return bucket_config
 
 
-def save_statistics(name: str, 
-                    feat_size: int, 
+def save_statistics(features: dict,
+                    # name: str,
+                    # feat_size: int,
                     execution_times: list,
                     PARTITIONS: list,
                     MAX_BUCKET_SIZES: list):
+    name = features["name"]
+    feat_size = features["K"]
     columns = {
         "num_partitions": PARTITIONS,
     }
@@ -277,22 +286,40 @@ def save_statistics(name: str,
             best_width_ind = i
             best_part_ind = execution_times[i].index(lowest)
 
+    # Print statistics first
+    features["best_num_partitions"] = [PARTITIONS[best_part_ind]]
+    features["best_max_bucket_width"] = [MAX_BUCKET_SIZES[best_width_ind]]
+    features["best_exe_time"] = min_exe_time
 
-    dataFrame = pd.DataFrame(data=columns)
-    log = F"output_tune_{name}_feat{feat_size}.csv"
+    # Pandas settings
+    pd.set_option("display.width", 800)
+    pd.set_option("display.max_columns", None)
+
+    dataFrame = pd.DataFrame(data=features)
+    dataFrame.set_index("name", inplace=True)
+    log = "output"
+    if not os.path.exists(F"{log}"):
+        os.mkdir(F"{log}")
+    log = os.path.join(log, F"output_tune_{name}_feat{feat_size}_hyb.csv")
     print(dataFrame)
     dataFrame.to_csv(log)
 
-    summary = {
-        "dataset": [name],
-        "feature_size": [feat_size],
-        "best_exe_time": [min_exe_time],
-        "best_num_partitions": [PARTITIONS[best_part_ind]],
-        "best_bucket_width": [MAX_BUCKET_SIZES[best_width_ind]]
-    }
-    dataFrame = pd.DataFrame(data=summary)
+    # Put prints under output/ directory
+    dataFrame = pd.DataFrame(data=columns)
+    dataFrame.set_index("num_partitions", inplace=True)
     print(dataFrame)
     dataFrame.to_csv(log, mode='a')
+
+    # summary = {
+    #     "dataset": [name],
+    #     "feature_size": [feat_size],
+    #     "best_exe_time": [min_exe_time],
+    #     "best_num_partitions": [PARTITIONS[best_part_ind]],
+    #     "best_bucket_width": [MAX_BUCKET_SIZES[best_width_ind]]
+    # }
+    # dataFrame = pd.DataFrame(data=summary)
+    # print(dataFrame)
+    # dataFrame.to_csv(log, mode='a')
 
     print(F"#### Saved to {log} .")
 
@@ -352,51 +379,66 @@ MAX_BUCKET_SIZES_SET = {
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
-    parser.add_argument("--dataset", "-d", type=str, default="arxiv", help="dataset name")
+    parser.add_argument("--dataset", "-d", type=str, help="matrix market (mtx) dataset path")
     parser.add_argument("--implicit-unroll", "-i", action="store_true", default=True, help="use implicit unroll")
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(-1)
     args = parser.parse_args()
-    name = args.dataset
-    g = get_dataset(name)
-
-    # Pandas settings
-    pd.set_option("display.width", 800)
-    pd.set_option("display.max_columns", None)
+    # name = args.dataset
+    # g = get_dataset(name)
+    filename = args.dataset
+    g = MTX(filename)
+    # features = g.matrix_features()
+    # # test
+    # print(F"features: {features}")
+    # exit(-1)
+    # # end test
 
     # Tuning
-    # PARTITIONS          = [1, 2]
-    # MAX_BUCKET_SIZES    = [1, 2]
-    PARTITIONS          = PARTITIONS_SET[name]
-    MAX_BUCKET_SIZES    = MAX_BUCKET_SIZES_SET[name]
+    PARTITIONS          = [1, 2]
+    MAX_BUCKET_SIZES    = [1, 2]
+    # PARTITIONS          = PARTITIONS_SET[name]
+    # MAX_BUCKET_SIZES    = MAX_BUCKET_SIZES_SET[name]
+    # for feat_size in [32]:
     for feat_size in [32, 64, 128, 256, 512]:
+        features = g.matrix_features()
+        features["K"] = feat_size
         execution_times = []
-        x = th.rand((g.num_src_nodes(), feat_size))
-        y_golden = dgl.ops.copy_u_sum(g, x)
+        x = th.rand((g.num_dst_nodes(), feat_size))
+        # y_golden = dgl.ops.copy_u_sum(g, x)
+        y_ndarray = g.dot(x.numpy())
         for width in MAX_BUCKET_SIZES:
             width_exe_times = []
             for num_p in PARTITIONS:
                 # Get bucket_config
                 bucket_config = get_bucket_config(width)
-                print(F"#### data: {name} feat_size: {feat_size} num_partitions: {num_p} max_bucket_width: {width} bucket_config: {bucket_config}")
+                print(F"#### data: {filename} feat_size: {feat_size} num_partitions: {num_p} max_bucket_width: {width} bucket_config: {bucket_config}")
                 try:
                     exe_time = bench_hyb(
                         g,
                         x,
-                        y_golden,
+                        # y_golden,
+                        y_ndarray,
                         feat_size=feat_size,
                         bucket_sizes=bucket_config,
                         coarsening_factor=2,
                         num_col_parts=num_p,
                         use_implicit_unroll=args.implicit_unroll,
                     )
-                    # width_exe_times.append(exe_time)
                     width_exe_times.append(float("{:.6f}".format(exe_time)))
                 except Exception as e:
                     width_exe_times.append(math.inf)
                     print(e, file=sys.stderr)
             execution_times.append(width_exe_times)
-        
+
         # Statistics
-        save_statistics(name, feat_size, execution_times, PARTITIONS, MAX_BUCKET_SIZES)
+        save_statistics(features,
+                        # os.path.splitext(os.path.basename(filename))[0],
+                        # feat_size,
+                        execution_times,
+                        PARTITIONS,
+                        MAX_BUCKET_SIZES)
 
 
 

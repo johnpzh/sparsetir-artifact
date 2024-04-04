@@ -12,7 +12,7 @@ ulimit -s unlimited
 #   python3 dump_npz.py > dump_npz.log 2> dump_npz.err
 # fi
 
-for dataset in ppi arxiv proteins reddit
+for dataset in proteins reddit
 # for dataset in cora citeseer pubmed ppi arxiv proteins reddit
 do
   echo "Running tuning SpMM w/ hybrid format on ${dataset}"
