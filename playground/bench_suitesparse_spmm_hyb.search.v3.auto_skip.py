@@ -39,6 +39,7 @@ from sparsetir_artifact import profile_tvm_ms
 import math
 import pandas as pd
 from matrix_market import MTX
+import time
 
 
 @T.prim_func
@@ -437,6 +438,22 @@ def start_max_bucket_width(avg_nnz_per_row: float):
     return width
 
 
+def check_if_skip(overhead: float,
+                  name: str):
+    # if overhead >= 0.001:
+    if overhead >= 3600:
+        # longer than 1 hour
+        output_dir = "output"
+        error_file = os.path.join(output_dir, F"skipped_{name}.csv")
+        df = pd.DataFrame(data=features, index=[0])
+        df.to_csv(error_file, index=False)
+        print(F"Overhead is {overhead} (s). Matrix {name} is skipped. Its features are written to {error_file} .")
+        print(df)
+        return True
+    
+    return False
+
+
 def search_best_config(features,
                        g,
                        x,
@@ -452,6 +469,7 @@ def search_best_config(features,
     max_bucket_width = start_max_bucket_width(features["avg_nnz_per_row"])
     curr = Config(num_parts, max_bucket_width)
     bucket_sizes = get_bucket_config(max_bucket_width)
+    start_time = time.perf_counter()
     try:
         print(F"#### data: {name} feat_size: {feat_size} num_partitions: {num_parts} max_bucket_width: {max_bucket_width} bucket_config: {bucket_sizes}", flush=True)
         exe_time = bench_hyb(g,
@@ -467,6 +485,12 @@ def search_best_config(features,
         print(e, file=sys.stderr)
     exe_time = float("{:.6}".format(exe_time))
     curr.exe_time = exe_time
+    end_time = time.perf_counter()
+    # check if skip this input matrix
+    if check_if_skip(overhead=(end_time - start_time),
+                     name=name):
+        sys.exit(-1)
+
     # # test
     # print(F"453 curr: {curr}")
     # # end test
@@ -496,6 +520,7 @@ def search_best_config(features,
             is_visited.append(adj_config) # mark as visited
             bucket_sizes = get_bucket_config(adj_config.max_bucket_width)
             # Measure execution time
+            start_time = time.perf_counter()
             try:
                 print(F"#### data: {name} feat_size: {feat_size} num_partitions: {adj_config.num_parts} max_bucket_width: {adj_config.max_bucket_width} bucket_config: {bucket_sizes}", flush=True)
                 exe_time = bench_hyb(g,
@@ -513,6 +538,11 @@ def search_best_config(features,
             partitions.append(adj_config.num_parts)
             max_bucket_sizes.append(adj_config.max_bucket_width)
             execution_times.append(exe_time)
+            exe_time = float("{:.6}".format(exe_time))
+            # check if skip this input matrix
+            if check_if_skip(overhead=(end_time - start_time),
+                            name=name):
+                sys.exit(-1)
             if exe_time == math.inf or exe_time > curr.exe_time:
                 # Pruning adjacent config if its execution time is longer
                 continue
@@ -542,10 +572,10 @@ if __name__ == "__main__":
     filename = args.dataset
     g = MTX(filename)
 
-    # Feasibility check
-    if g.num_dst_nodes() >= 5558326 or g.num_edges() >= 59524291:
-        print(F"\nMatrix {filename} is too large to be handled. num_cols: {g.num_dst_nodes}. nnz: {g.num_edges}. Passed.")
-        sys.exit(-1)
+    # # Feasibility check
+    # if g.num_dst_nodes() >= 5558326 or g.num_edges() >= 59524291:
+    #     print(F"\nMatrix {filename} is too large to be handled. num_cols: {g.num_dst_nodes}. nnz: {g.num_edges}. Passed.")
+    #     sys.exit(-1)
 
     # features = g.matrix_features()
     # # test
@@ -595,31 +625,6 @@ if __name__ == "__main__":
         features["best_max_bucket_width"] = best_config.max_bucket_width
         features["best_exe_time"] = [best_config.exe_time]
         
-        # for width in MAX_BUCKET_SIZES:
-        #     width_exe_times = []
-        #     for num_p in PARTITIONS:
-        #         # Get bucket_config
-        #         bucket_config = get_bucket_config(width)
-        #         print(F"#### data: {filename} feat_size: {feat_size} num_partitions: {num_p} max_bucket_width: {width} bucket_config: {bucket_config}")
-        #         try:
-        #             exe_time = bench_hyb(
-        #                 g,
-        #                 x,
-        #                 # y_golden,
-        #                 y_ndarray,
-        #                 feat_size=feat_size,
-        #                 bucket_sizes=bucket_config,
-        #                 coarsening_factor=2,
-        #                 num_col_parts=num_p,
-        #                 use_implicit_unroll=args.implicit_unroll,
-        #             )
-        #             width_exe_times.append(float("{:.6f}".format(exe_time)))
-        #         except Exception as e:
-        #             width_exe_times.append(math.inf)
-        #             print(e, file=sys.stderr)
-        #     execution_times.append(width_exe_times)
-        
-
         # Statistics
         save_statistics(features,
                         execution_times,

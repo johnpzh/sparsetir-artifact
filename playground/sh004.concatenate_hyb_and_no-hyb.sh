@@ -10,7 +10,7 @@ start_time=$(date +%s)
 
 #### Import MATRICES
 # source "dataset_names_test.sh"
-source "dataset_names_242.sh"
+source "dataset_names_1834.txt"
 output_dir="output"
 
 # for name in cora citeseer; do
@@ -21,9 +21,15 @@ total=0
 for mtx in "${MATRICES[@]}"; do
     ((total++))
     name=$(basename "${mtx}" .tar.gz)
-    if [ ! -f "${output_dir}/output_tune_${name}_hyb_collect.csv" ]; then
+    hyb_file="${output_dir}/output_tune_${name}_hyb_collect.csv"
+    naive_file="${output_dir}/output_tune_${name}_naive_collect.csv"
+    if [ ! -f "${hyb_file}" ]; then
         # Some hyb version performance is not ready yet.
         echo "${name} hyb not ready, yet. Passed"
+        continue
+    elif [ ! -f "${naive_file}" ]; then
+        # Some naive version performance is not ready yet.
+        echo "${name} naive not ready, yet. Passed"
         continue
     fi
     ((ready++))
@@ -37,11 +43,12 @@ total_csv="${output_dir}/output_0_total.csv"
 # for name in cora citeseer pubmed ppi; do
 for mtx in "${MATRICES[@]}"; do
     name=$(basename "${mtx}" .tar.gz)
-    if [ ! -f "${output_dir}/output_tune_${name}_hyb_collect.csv" ]; then
-        # Some hyb version performance is not ready yet.
+
+    input_csv="${output_dir}/output_tune_${name}_hyb-naive_collect.csv"
+    if [ ! -f "${input_csv}" ]; then
+        # Some performance is not ready yet.
         continue
     fi
-    input_csv="${output_dir}/output_tune_${name}_hyb-naive_collect.csv"
     if [ ${is_first} -eq 1 ]; then
         is_first=0
         head -n 1 "${input_csv}" > "${total_csv}"

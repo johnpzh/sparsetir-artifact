@@ -12,7 +12,8 @@ app="bench_suitesparse_spmm_hyb.searchv2.gpu_index.py"
 
 #### Import MATRICES
 # source "dataset_names_test.sh"
-source "dataset_names_242_part2.sh"
+# source "dataset_names_242_part2.sh"
+source "dataset_names_242_part2.v2.sh"
 
 # for name in cora citeseer; do
 # for name in cora citeseer pubmed ppi; do

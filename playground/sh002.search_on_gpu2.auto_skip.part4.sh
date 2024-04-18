@@ -6,14 +6,13 @@ export FLUSH_L2=ON
 data_dir="../data/suitesparse"
 start_time=$(date +%s)
 
-gpu_index=7
+gpu_index=4
 
-app="bench_suitesparse_spmm_hyb.searchv2.gpu_index.py"
+app="bench_suitesparse_spmm_hyb.search.v3.auto_skip.py"
 
 #### Import MATRICES
-# source "dataset_names_test.sh"
-# source "dataset_names_242_part6.sh"
-source "dataset_names_242_part6.v2.sh"
+source "dataset_names_1834_part4.txt"
+# source "dataset_names_242.sh"
 
 # for name in cora citeseer; do
 # for name in cora citeseer pubmed ppi; do
