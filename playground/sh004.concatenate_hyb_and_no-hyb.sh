@@ -1,4 +1,11 @@
 
+# if [[ "$#" -ne 2 ]]; then
+#     echo "Usage $0 <output.csv>"
+#     exit 1
+# fi
+
+# total_csv="$1"
+
 ulimit -s unlimited
 
 export FLUSH_L2=ON

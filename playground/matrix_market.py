@@ -100,6 +100,3 @@ class MTX:
 
         return features
 
-        
-
-    

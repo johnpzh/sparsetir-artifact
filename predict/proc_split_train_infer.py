@@ -6,15 +6,16 @@ import sys
 import os
 from sklearn.ensemble import RandomForestClassifier
 
-def main(feature_file: str,
+def split(feature_file: str,
          train_ratio: float):
     output_dir = "data"
     df = pd.read_csv(feature_file)
 
     # Drop duplicated matrices by names
-    # df = df.drop_duplicates(subset=['name']).drop(columns=['K'])
+    df = df[df["speed_to_naive"] >= 1.1] # Drop slowdown cases
+    # df.drop_duplicates(subset=['name'], inplace=True, keep='last') # Drop duplicate names
     df.drop_duplicates(subset=['name'], inplace=True) # Drop duplicate names
-    df.drop(columns=['K'], inplace=True) # Drop column 'K'
+    # df.drop(columns=['K'], inplace=True) # Drop column 'K'
     # df.dropna(inplace=True) # Drop rows with any NaN
 
     # Divide data
@@ -35,7 +36,7 @@ def main(feature_file: str,
     # Save
     basename = os.path.splitext(os.path.basename(feature_file))[0]
     train_file = os.path.join(output_dir, F"{basename}.train_set.csv")
-    test_file = os.path.join(output_dir, F"{basename}.test_set.csv")
+    test_file = os.path.join(output_dir, F"{basename}.infer_set.csv")
     train_df.to_csv(train_file, index=False)
     test_df.to_csv(test_file, index=False)
 
@@ -60,4 +61,4 @@ if __name__ == "__main__":
 
     feature_file = args.features
     train_ratio = args.ratio
-    main(feature_file, train_ratio)
+    split(feature_file, train_ratio)

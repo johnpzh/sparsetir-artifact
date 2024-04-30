@@ -101,7 +101,6 @@ def csr2ell_index_map(i, j):
 
 
 # cached_bucketing_format = None
-GPU_DEVICE = None
 OUTPUT_DIR="output"
 
 
@@ -229,23 +228,23 @@ def bench_hyb(
     # prepare nd array
     b_nd = tvm.nd.array(
         x.numpy().reshape(-1).astype("float32"),
-        device=tvm.cuda(GPU_DEVICE),
+        device=tvm.cuda(0),
     )
-    c_nd = tvm.nd.array(np.zeros((n * feat_size,)).astype("float32"), device=tvm.cuda(GPU_DEVICE))
+    c_nd = tvm.nd.array(np.zeros((n * feat_size,)).astype("float32"), device=tvm.cuda(0))
     # prepare args
     args = [b_nd, c_nd]
 
     for part_id in range(num_col_parts):
         for bucket_id, _ in enumerate(bucket_sizes):
             weight = tvm.nd.array(
-                mask[part_id][bucket_id].numpy().reshape(-1).astype("float32"), device=tvm.cuda(GPU_DEVICE)
+                mask[part_id][bucket_id].numpy().reshape(-1).astype("float32"), device=tvm.cuda(0)
             )
             rows = tvm.nd.array(
-                row_indices[part_id][bucket_id].numpy().astype("int32"), device=tvm.cuda(GPU_DEVICE)
+                row_indices[part_id][bucket_id].numpy().astype("int32"), device=tvm.cuda(0)
             )
             cols = tvm.nd.array(
                 col_indices[part_id][bucket_id].numpy().reshape(-1).astype("int32"),
-                device=tvm.cuda(GPU_DEVICE),
+                device=tvm.cuda(0),
             )
             args += [weight, rows, cols]
 
@@ -454,7 +453,18 @@ def check_if_skip(overhead: float,
     
     return False
 
+def search_bucket_sizes(features,
+                        g,
+                        x,
+                        y_ndarray,
+                        feat_size,
+                        coarsening_factor,
+                        use_implicit_unroll):
+    init_buckets()
+    search_max_bucket_size()
+    bench_hyb()
 
+    
 def search_best_config(features,
                        g,
                        x,
@@ -574,7 +584,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
     parser.add_argument("--dataset", "-d", type=str, help="matrix market (mtx) dataset path")
     parser.add_argument("--implicit-unroll", "-i", action="store_true", default=True, help="use implicit unroll")
-    parser.add_argument("--gpu", "-g", type=int, default=0, help="select the GPU device by index")
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(-1)
@@ -584,18 +593,8 @@ if __name__ == "__main__":
     filename = args.dataset
     g = MTX(filename)
 
-    # # Feasibility check
-    # if g.num_dst_nodes() >= 5558326 or g.num_edges() >= 59524291:
-    #     print(F"\nMatrix {filename} is too large to be handled. num_cols: {g.num_dst_nodes}. nnz: {g.num_edges}. Passed.")
-    #     sys.exit(-1)
-
-    # features = g.matrix_features()
-    # # test
-    # print(F"features: {features}")
-    # exit(-1)
-    # # end test
-    GPU_DEVICE = args.gpu
-    print(F"GPU_DEVICE: {GPU_DEVICE}")
+    # GPU device
+    print(F"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', default=0)}")
 
     # Tuning
     # PARTITIONS          = [1, 2]
@@ -612,17 +611,8 @@ if __name__ == "__main__":
             continue
 
         x = th.rand((g.num_dst_nodes(), feat_size))
-        # # test
-        # # x = th.zeros((g.num_dst_nodes(), feat_size))
-        # # for i in range(min(g.num_dst_nodes(), feat_size)):
-        # #     x[i][i] = 1
-        # x = th.ones((g.num_dst_nodes(), feat_size))
-        # # end test
         # y_golden = dgl.ops.copy_u_sum(g, x)
         y_ndarray = g.dot(x.numpy())
-        # # test
-        # print(F"y_ndarray: {y_ndarray}")
-        # # end test
 
         execution_times = []
         partitions = []

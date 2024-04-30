@@ -11,6 +11,11 @@ def collect_hyb_and_naive(name: str):
     output_dir = "output"
     hyb_csv = os.path.join(output_dir, F"output_tune_{name}_hyb_collect.csv")
     naive_csv = os.path.join(output_dir, F"output_tune_{name}_naive_collect.csv")
+    final_csv = os.path.join(output_dir, F"output_tune_{name}_hyb-naive_collect.csv")
+    # if os.path.isfile(final_csv):
+    #     print(F"{final_csv} already exits. Skipped it.")
+    #     return
+
     hyb_df = pd.read_csv(hyb_csv)
     hyb_df.set_index("name", inplace=True)
     naive_df = pd.read_csv(naive_csv)
@@ -23,7 +28,7 @@ def collect_hyb_and_naive(name: str):
     hyb_df = hyb_df.rename(columns={"best_exe_time": "exe_time_hyb"})
 
     print(hyb_df)
-    final_csv = os.path.join(output_dir, F"output_tune_{name}_hyb-naive_collect.csv")
+    # final_csv = os.path.join(output_dir, F"output_tune_{name}_hyb-naive_collect.csv")
     hyb_df.to_csv(final_csv)
 
     print(F"\nSaved to {final_csv} .")
