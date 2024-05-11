@@ -101,7 +101,6 @@ def csr2ell_index_map(i, j):
 
 
 # cached_bucketing_format = None
-GPU_DEVICE = None
 OUTPUT_DIR="output"
 
 
@@ -118,7 +117,8 @@ def bench_hyb(
 ):
     num_buckets = len(bucket_sizes)
     coarsening_factor = min(coarsening_factor, feat_size // 32)
-    indptr, indices, _ = g.adj_tensors("csc")
+    # indptr, indices, _ = g.adj_tensors("csc")
+    indptr, indices, _ = g.adj_tensors("csr")
     m = g.num_dst_nodes()
     n = g.num_src_nodes()
     nnz = g.num_edges()
@@ -229,30 +229,30 @@ def bench_hyb(
     # prepare nd array
     b_nd = tvm.nd.array(
         x.numpy().reshape(-1).astype("float32"),
-        device=tvm.cuda(GPU_DEVICE),
+        device=tvm.cuda(0),
     )
-    c_nd = tvm.nd.array(np.zeros((n * feat_size,)).astype("float32"), device=tvm.cuda(GPU_DEVICE))
+    c_nd = tvm.nd.array(np.zeros((n * feat_size,)).astype("float32"), device=tvm.cuda(0))
     # prepare args
     args = [b_nd, c_nd]
 
     for part_id in range(num_col_parts):
         for bucket_id, _ in enumerate(bucket_sizes):
             weight = tvm.nd.array(
-                mask[part_id][bucket_id].numpy().reshape(-1).astype("float32"), device=tvm.cuda(GPU_DEVICE)
+                mask[part_id][bucket_id].numpy().reshape(-1).astype("float32"), device=tvm.cuda(0)
             )
             rows = tvm.nd.array(
-                row_indices[part_id][bucket_id].numpy().astype("int32"), device=tvm.cuda(GPU_DEVICE)
+                row_indices[part_id][bucket_id].numpy().astype("int32"), device=tvm.cuda(0)
             )
             cols = tvm.nd.array(
                 col_indices[part_id][bucket_id].numpy().reshape(-1).astype("int32"),
-                device=tvm.cuda(GPU_DEVICE),
+                device=tvm.cuda(0),
             )
             args += [weight, rows, cols]
 
     # test accuracy
     f(*args)
     # Turned off correctness check
-    # tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
+    tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
     # tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_golden.numpy(), rtol=1e-4)
 
     # evaluate time
@@ -574,7 +574,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
     parser.add_argument("--dataset", "-d", type=str, help="matrix market (mtx) dataset path")
     parser.add_argument("--implicit-unroll", "-i", action="store_true", default=True, help="use implicit unroll")
-    parser.add_argument("--gpu", "-g", type=int, default=0, help="select the GPU device by index")
+    # parser.add_argument("--gpu", "-g", type=int, default=0, help="select the GPU device by index")
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(-1)
@@ -594,8 +594,10 @@ if __name__ == "__main__":
     # print(F"features: {features}")
     # exit(-1)
     # # end test
-    GPU_DEVICE = args.gpu
-    print(F"GPU_DEVICE: {GPU_DEVICE}")
+    # GPU_DEVICE = args.gpu
+    # print(F"GPU_DEVICE: {GPU_DEVICE}")
+    print(F"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', default=0)}")
+
 
     # Tuning
     # PARTITIONS          = [1, 2]
@@ -627,6 +629,7 @@ if __name__ == "__main__":
         execution_times = []
         partitions = []
         max_bucket_sizes = []
+        start_time = time.perf_counter()
         best_config = search_best_config(features,
                                          g,
                                          x,
@@ -637,8 +640,10 @@ if __name__ == "__main__":
                                          partitions=partitions,
                                          max_bucket_sizes=max_bucket_sizes,
                                          execution_times=execution_times)
+        end_time = time.perf_counter()
         features["best_num_partitions"] = best_config.num_parts
         features["best_max_bucket_width"] = best_config.max_bucket_width
+        features["autotuning_time(s)"] = end_time - start_time
         features["best_exe_time"] = [best_config.exe_time]
         
         # Statistics

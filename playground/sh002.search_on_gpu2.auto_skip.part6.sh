@@ -6,12 +6,14 @@ export FLUSH_L2=ON
 data_dir="../data/suitesparse"
 start_time=$(date +%s)
 
-gpu_index=6
+# gpu_index=6
+export CUDA_DEVICE_ORDER="PCI_BUS_ID"
+export CUDA_VISIBLE_DEVICES="6"
 
 app="bench_suitesparse_spmm_hyb.search.v3.auto_skip.py"
 
 #### Import MATRICES
-source "dataset_names_1834_part6.txt"
+source "dataset_names_2904_part6.txt"
 # source "dataset_names_242.sh"
 
 # for name in cora citeseer; do
@@ -21,7 +23,7 @@ for mtx in "${MATRICES[@]}"; do
     name=$(basename "${mtx}" .tar.gz)
     echo ""
     echo "Going to ${name} ..."
-    python "${app}" -d "${data_dir}/${name}/${name}.mtx" -g "${gpu_index}" 2>&1 | tee "output/output_tune_${name}_hyb_verbose.log"
+    python "${app}" -d "${data_dir}/${name}/${name}.mtx" 2>&1 | tee "output/output_tune_${name}_hyb_verbose.log"
     python extract_data.search.py -d "${name}"
 done
 

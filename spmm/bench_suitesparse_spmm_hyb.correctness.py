@@ -39,6 +39,7 @@ from sparsetir_artifact import profile_tvm_ms
 import math
 import pandas as pd
 from format_matrix_market import MTX
+import time
 
 
 @T.prim_func
@@ -100,7 +101,7 @@ def csr2ell_index_map(i, j):
 
 
 # cached_bucketing_format = None
-OUTPUT_DIR="output"
+OUTPUT_DIR="output.correctness"
 
 def bench_hyb(
     g,
@@ -113,9 +114,11 @@ def bench_hyb(
     num_col_parts=1,
     use_implicit_unroll=False,
 ):
+    tvm_start_time = time.perf_counter()
     num_buckets = len(bucket_sizes)
     coarsening_factor = min(coarsening_factor, feat_size // 32)
-    indptr, indices, _ = g.adj_tensors("csc")
+    # indptr, indices, _ = g.adj_tensors("csc")
+    indptr, indices, _ = g.adj_tensors("csr")
     m = g.num_dst_nodes()
     n = g.num_src_nodes()
     nnz = g.num_edges()
@@ -245,6 +248,10 @@ def bench_hyb(
                 device=tvm.cuda(0),
             )
             args += [weight, rows, cols]
+
+    tvm_end_time = time.perf_counter()
+    tvm_exe_time = tvm_end_time - tvm_start_time
+    print(F"tvm_schedule_time(s): {tvm_exe_time:.6}")
 
     # test accuracy
     f(*args)
@@ -377,6 +384,16 @@ MAX_BUCKET_SIZES_SET = {
     "reddit": [16, 32, 64, 128, 256, 512, 1024],
 }
 
+def check_if_done_before(name: str,
+                         feat_size: int):
+    output_dir = OUTPUT_DIR
+    filename = os.path.join(output_dir, F"output_tune_{name}_feat{feat_size}_hyb.csv")
+    if os.path.isfile(filename):
+        print(F"{filename} already exits. Skipped it.")
+        return True
+    else:
+        return False
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
     parser.add_argument("--dataset", "-d", type=str, help="matrix market (mtx) dataset path")
@@ -394,18 +411,26 @@ if __name__ == "__main__":
     # print(F"features: {features}")
     # exit(-1)
     # # end test
+    # print(F"GPU_DEVICE: {GPU_DEVICE}")
+    print(F"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', default=0)}")
 
     # Tuning
     PARTITIONS          = [1]
-    MAX_BUCKET_SIZES    = [8]
+    MAX_BUCKET_SIZES    = [64]
     # PARTITIONS          = PARTITIONS_SET[name]
     # MAX_BUCKET_SIZES    = MAX_BUCKET_SIZES_SET[name]
-    # for feat_size in [32]:
-    for feat_size in [32, 64, 128, 256, 512]:
+    for feat_size in [32]:
+    # for feat_size in [32, 64, 128, 256, 512]:
         features = g.matrix_features()
         features["K"] = feat_size
+
+        # # If done before, skipped
+        # if check_if_done_before(features["name"], feat_size):
+        #     continue
+
         execution_times = []
-        x = th.rand((g.num_dst_nodes(), feat_size))
+        # x = th.rand((g.num_dst_nodes(), feat_size))
+        x = th.ones((g.num_dst_nodes(), feat_size))
         # y_golden = dgl.ops.copy_u_sum(g, x)
         y_ndarray = g.dot(x.numpy())
         for width in MAX_BUCKET_SIZES:
@@ -443,24 +468,3 @@ if __name__ == "__main__":
                         execution_times,
                         PARTITIONS,
                         MAX_BUCKET_SIZES)
-
-
-
-    # for feat_size in [32, 64, 128, 256, 512]:
-    #     print("feat_size = ", feat_size)
-    #     try:
-    #         x = th.rand((g.num_src_nodes(), feat_size))
-    #         y_golden = dgl.ops.copy_u_sum(g, x)
-    #         bench_hyb(
-    #             g,
-    #             x,
-    #             y_golden,
-    #             feat_size=feat_size,
-    #             bucket_sizes=bucketing_config[name],
-    #             coarsening_factor=2,
-    #             num_col_parts=col_part_config[name],
-    #             use_implicit_unroll=args.implicit_unroll,
-    #         )
-    #     except Exception as e:
-    #         print("OOM")
-    #         print(e, file=sys.stderr)

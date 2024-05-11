@@ -1,8 +1,23 @@
 from os.path import basename, splitext
 from scipy.io import mmread
 import numpy as np
+import math
 
-__all__ = ["MTX", "matrix_features"]
+__all__ = ["MTX", "Bucket"]
+
+
+class Bucket:
+    def __init__(self,
+                 bucket_width: int,
+                 num_rows: int,
+                 nnz: int):
+        self.bucket_width = bucket_width
+        self.num_rows = num_rows
+        self.nnz = nnz
+    
+    def __str__(self):
+        return F"Bucket(bucket_width={self.bucket_width}, num_rows={self.num_rows}, nnz={self.nnz})"
+
 
 class MTX:
     def __init__(self, 
@@ -99,7 +114,73 @@ class MTX:
         features["std_dev_nnz_density_per_row"] = std_dev_nnz_density_per_row
 
         return features
+    
+
+    def init_buckets(self, num_parts: int, width_limit: int=1024):
+        """Return the initial buckets of the matrix
+
+        Args:
+            num_parts (int): number of partitions
+            width_limit (int, optional): The maximum limit of the bucket width. Defaults to 1024.
+
+        Returns:
+            List of dictionary: List of dictionary. Every dictionary is for a bucket, {width: Bucket()}.
+        """
+        # row_indices = [None] * num_parts
+        # col_indices = [None] * num_parts
+
+        num_rows = self.num_src_nodes()
+        num_cols = self.num_dst_nodes()
+        partition_size = (num_cols + num_parts - 1) // num_parts
+
+        # # test
+        # print(F"num_rows: {num_rows} num_cols: {num_cols} num_parts: {num_parts} partition_size: {partition_size}")
+        # # end test
+
+        # Count the degree of each row in each partition
+        # degree_counter shape is partition_size * num_rows
+        degree_counter = [ [0] * num_rows for i in range(num_parts) ]
+        for row_ind, col_ind in zip(self.coo_mtx.row, self.coo_mtx.col):
+            part_ind = col_ind // partition_size
+            degree_counter[part_ind][row_ind] += 1
+        
+        # # test
+        # for part_ind in range(num_parts):
+        #     print(F"degree_counter[{part_ind}]: {degree_counter[part_ind]}")
+        # # end test
+
+        # Put rows into its corresponding bucket, a row with length l and
+        # 2^{i - 1} < l <= 2^{i} should be in the bucket with width 2^{i}
+        buckets = []
+        for part_ind in range(num_parts):
+            # buckets.append({})
+            b_pool = {}
+            for row_ind in range(num_rows):
+                degree = degree_counter[part_ind][row_ind]
+                # # test
+                # print(F"degree_counter[{part_ind}][{row_ind}]: {degree}")
+                # # end test
+                if 0 == degree:
+                    continue
+                pow_ceil = math.ceil(math.log2(degree))
+                width = int(2 ** pow_ceil)
+                new_rows = 1
+                if width > width_limit:
+                    # Limit the width according to GPU block thread limit (1024 for CUDA)
+                    ratio = width // width_limit
+                    width = width_limit
+                    new_rows *= ratio
+
+                if width not in b_pool:
+                    # A new bucket
+                    b_pool[width] = Bucket(width, new_rows, degree)
+                else:
+                    # Existing bucket
+                    b_pool[width].nnz += degree
+                    b_pool[width].num_rows += new_rows
+            b_pool = dict(sorted(b_pool.items())) # sort by keys
+            buckets.append(b_pool)
+        
+        return buckets
 
         
-
-    

@@ -23,9 +23,9 @@ def collect_hyb_and_naive(name: str):
     naive_exe_time = list(naive_df["exe_time"])
     speedup = ["{:.6}".format(nai / hyb) for nai, hyb in zip(naive_exe_time, hyb_exe_time)]
     # hyb_df = hyb_df.assign(exe_time_naive=list(naive_df["exe_time"]))
-    hyb_df = hyb_df.assign(**{'exe_time_naive': list(naive_df["exe_time"]),
+    hyb_df = hyb_df.assign(**{'exe_time_naive(ms)': list(naive_df["exe_time"]),
                               'speed_to_naive': speedup})
-    hyb_df = hyb_df.rename(columns={"best_exe_time": "exe_time_hyb"})
+    hyb_df = hyb_df.rename(columns={"best_exe_time": "exe_time_hyb(ms)"})
 
     print(hyb_df)
     # final_csv = os.path.join(output_dir, F"output_tune_{name}_hyb-naive_collect.csv")

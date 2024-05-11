@@ -5,6 +5,7 @@ import math
 
 __all__ = ["MTX", "Bucket"]
 
+
 class Bucket:
     def __init__(self,
                  bucket_width: int,
@@ -113,7 +114,7 @@ class MTX:
         features["std_dev_nnz_density_per_row"] = std_dev_nnz_density_per_row
 
         return features
-
+    
 
     def init_buckets(self, num_parts: int, width_limit: int=1024):
         # row_indices = [None] * num_parts
@@ -172,4 +173,5 @@ class MTX:
             buckets.append(b_pool)
         
         return buckets
-                
+
+        

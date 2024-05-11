@@ -6,9 +6,10 @@ import argparse
 import sys
 import os
 
+OUTPUT_DIR = "output.correctness"
 
 def collect_hyb_and_naive(name: str):
-    output_dir = "output"
+    output_dir = OUTPUT_DIR
     hyb_csv = os.path.join(output_dir, F"output_tune_{name}_hyb_collect.csv")
     naive_csv = os.path.join(output_dir, F"output_tune_{name}_naive_collect.csv")
     hyb_df = pd.read_csv(hyb_csv)

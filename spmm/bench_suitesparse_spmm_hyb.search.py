@@ -38,7 +38,7 @@ from utils import get_dataset
 from sparsetir_artifact import profile_tvm_ms
 import math
 import pandas as pd
-from matrix_market import MTX
+from format_matrix_market import MTX
 
 
 @T.prim_func

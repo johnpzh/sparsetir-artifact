@@ -18,7 +18,7 @@ num_parts=$2
 folder_names=($(find "$1" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;))
 
 # Save all names to a text file
-basename="dataset_names_1834"
+basename="dataset_names_2904"
 output_file="${basename}.txt"
 :> "${output_file}"
 echo "MATRICES=( \\" >> "${output_file}"

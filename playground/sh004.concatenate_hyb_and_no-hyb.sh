@@ -17,7 +17,7 @@ start_time=$(date +%s)
 
 #### Import MATRICES
 # source "dataset_names_test.sh"
-source "dataset_names_1834.txt"
+source "dataset_names_2904.txt"
 output_dir="output"
 
 # for name in cora citeseer; do
@@ -32,10 +32,12 @@ for mtx in "${MATRICES[@]}"; do
     naive_file="${output_dir}/output_tune_${name}_naive_collect.csv"
     if [ ! -f "${hyb_file}" ]; then
         # Some hyb version performance is not ready yet.
+        echo ""
         echo "${name} hyb not ready, yet. Passed"
         continue
     elif [ ! -f "${naive_file}" ]; then
         # Some naive version performance is not ready yet.
+        echo ""
         echo "${name} naive not ready, yet. Passed"
         continue
     fi

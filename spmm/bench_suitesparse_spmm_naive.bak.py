@@ -64,7 +64,7 @@ def csrmm(
             C[i, k1, k2, k3] = T.float32(0)
         C[i, k1, k2, k3] = C[i, k1, k2, k3] + A[i, j] * B[j, k1, k2, k3]
 
-OUTPUT_DIR="output"
+GPU_DEVICE = None
 
 def bench_naive(
     g,
@@ -113,16 +113,16 @@ def bench_naive(
     mod = tvm.sparse.lower_sparse_buffer(sch.mod)
     f = tvm.build(mod["main"], target="cuda")
     # prepare nd array
-    indptr_nd = tvm.nd.array(indptr.astype("int32"), device=tvm.cuda(0))
-    indices_nd = tvm.nd.array(indices.astype("int32"), device=tvm.cuda(0))
-    # indptr_nd = tvm.nd.array(indptr.numpy().astype("int32"), device=tvm.cuda(0))
-    # indices_nd = tvm.nd.array(indices.numpy().astype("int32"), device=tvm.cuda(0))
+    indptr_nd = tvm.nd.array(indptr.astype("int32"), device=tvm.cuda(GPU_DEVICE))
+    indices_nd = tvm.nd.array(indices.astype("int32"), device=tvm.cuda(GPU_DEVICE))
+    # indptr_nd = tvm.nd.array(indptr.numpy().astype("int32"), device=tvm.cuda(GPU_DEVICE))
+    # indices_nd = tvm.nd.array(indices.numpy().astype("int32"), device=tvm.cuda(GPU_DEVICE))
     b_nd = tvm.nd.array(
         x.numpy().reshape(-1).astype("float32"),
-        device=tvm.cuda(0),
+        device=tvm.cuda(GPU_DEVICE),
     )
-    c_nd = tvm.nd.array(np.zeros((n * feat_size,)).astype("float32"), device=tvm.cuda(0))
-    a_nd = tvm.nd.array(np.ones((nnz,)).astype("float32"), device=tvm.cuda(0))
+    c_nd = tvm.nd.array(np.zeros((n * feat_size,)).astype("float32"), device=tvm.cuda(GPU_DEVICE))
+    a_nd = tvm.nd.array(np.ones((nnz,)).astype("float32"), device=tvm.cuda(GPU_DEVICE))
     args = [a_nd, b_nd, c_nd, indptr_nd, indices_nd]
     f(*args)
     ## Turned of the checking
@@ -134,19 +134,10 @@ def bench_naive(
     return dur
 
 
-def check_if_done_before(name: str):
-    output_dir = OUTPUT_DIR
-    filename = os.path.join(output_dir, F"output_tune_{name}_naive_collect.csv")
-    if os.path.isfile(filename):
-        print(F"{filename} already exits. Skipped it.")
-        return True
-    else:
-        return False
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
     parser.add_argument("--dataset", "-d", type=str, help="matrix market (mtx) dataset path")
-    # parser.add_argument("--gpu", "-g", type=int, default=0, help="select the GPU device by index")
+    parser.add_argument("--gpu", "-g", type=int, default=0, help="select the GPU device by index")
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -156,21 +147,15 @@ if __name__ == "__main__":
     # g = get_dataset(name)
     filename = args.dataset
     g = MTX(filename)
-    # GPU_DEVICE = args.gpu
-    # print(F"GPU_DEVICE: {GPU_DEVICE}")
-    print(F"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', default=0)}")
+    GPU_DEVICE = args.gpu
+    print(F"GPU_DEVICE: {GPU_DEVICE}")
     name = os.path.splitext(os.path.basename(filename))[0]
-
-    # If done before, skipped
-    if check_if_done_before(name):
-        sys.exit(-1)
 
     columns = {
         "name": [],
         "K": [],
         "exe_time": []
     }
-    # for feat_size in [32]:
     for feat_size in [32, 64, 128, 256, 512]:
         columns["name"].append(name)
         columns["K"].append(feat_size)
@@ -200,7 +185,7 @@ if __name__ == "__main__":
 
     dataFrame = pd.DataFrame(data=columns)
     dataFrame.set_index("name", inplace=True)
-    log = OUTPUT_DIR
+    log = "output"
     if not os.path.exists(F"{log}"):
         os.mkdir(F"{log}")
     log = os.path.join(log, F"output_tune_{name}_naive_collect.csv")

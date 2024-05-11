@@ -64,7 +64,7 @@ def csrmm(
             C[i, k1, k2, k3] = T.float32(0)
         C[i, k1, k2, k3] = C[i, k1, k2, k3] + A[i, j] * B[j, k1, k2, k3]
 
-OUTPUT_DIR="output"
+OUTPUT_DIR="output.correctness"
 
 def bench_naive(
     g,
@@ -74,7 +74,8 @@ def bench_naive(
     feat_size=128,
     coarsening_factor=2,
 ):
-    indptr, indices, _ = g.adj_tensors("csc")
+    # indptr, indices, _ = g.adj_tensors("csc")
+    indptr, indices, _ = g.adj_tensors("csr")
     m = g.num_dst_nodes()
     n = g.num_src_nodes()
     nnz = g.num_edges()
@@ -161,22 +162,23 @@ if __name__ == "__main__":
     print(F"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', default=0)}")
     name = os.path.splitext(os.path.basename(filename))[0]
 
-    # If done before, skipped
-    if check_if_done_before(name):
-        sys.exit(-1)
+    # # If done before, skipped
+    # if check_if_done_before(name):
+    #     sys.exit(-1)
 
     columns = {
         "name": [],
         "K": [],
         "exe_time": []
     }
-    # for feat_size in [32]:
-    for feat_size in [32, 64, 128, 256, 512]:
+    for feat_size in [32]:
+    # for feat_size in [32, 64, 128, 256, 512]:
         columns["name"].append(name)
         columns["K"].append(feat_size)
         print("feat_size = ", feat_size)
         try:
-            x = th.rand((g.num_dst_nodes(), feat_size))
+            # x = th.rand((g.num_dst_nodes(), feat_size))
+            x = th.ones((g.num_dst_nodes(), feat_size))
             # y_golden = dgl.ops.copy_u_sum(g, x)
             y_ndarray = g.dot(x.numpy())
             

@@ -6,7 +6,7 @@ import argparse
 import sys
 import os
 
-OUTPUT_DIR = "output"
+OUTPUT_DIR = "output.correctness"
 
 # def geomean_speedup(baseline: List, x: List) -> Any:
 #     return np.exp((np.log(np.array(baseline)) - np.log(np.array(x))).mean())
@@ -25,8 +25,8 @@ def check_if_valid(name: str,
 
 def extract_data(name: str):
 
-    FEAT_SIZES = [32, 64, 128, 256, 512]
-    # HEAD_STR = "name,num_rows,num_cols,nnz,avg_nnz_per_row,min_nnz_per_row,max_nnz_per_row,std_dev_nnz_per_row,avg_nnz_density_per_row,min_nnz_density_per_row,max_nnz_density_per_row,std_dev_nnz_density_per_row,K,best_num_partitions,best_max_bucket_width,best_exe_time"
+    FEAT_SIZES = [32]
+    # FEAT_SIZES = [32, 64, 128, 256, 512]
     output_dir = OUTPUT_DIR
     if not check_if_valid(name,
                           output_dir,
