@@ -15,8 +15,18 @@ import tvm.sparse
 from sparsetir_artifact import profile_tvm_ms
 import time
 import sys
+import math
+from typing import List, Callable, Any, Tuple, Union
+import torch
 
-__all__ = ["build_hyb_format", "bench_hyb_with_config", "search_bucket_config"]
+__all__ = ["build_hyb_format", "bench_hyb_with_config", "search_bucket_config", "CostModelSettings"]
+
+class CostModelSettings:
+    def __init__(self, mem_w: float, bub_w: float):
+        self.mem_w = mem_w  # weight of memory access overhead in the cost model
+        self.bub_w = bub_w  # weight of bubble overhead in the cost model
+    def __str__(self) -> np.str:
+        return F"(mem_w={self.mem_w}, bub_w={self.bub_w})"
 
 #####################
 # SparseTIR settings
@@ -92,6 +102,48 @@ def csr2ell_index_map(i, j):
 #     while curr_max_width < 1:
 #         # Halve
 #         curr_max_width /= 2
+
+def profile_100_runs_ms(f: tvm.runtime.Module, args: List[Any]) -> float:
+    return run_100_times(lambda: f(*args))
+
+
+def run_100_times(f: Callable[[], None]) -> float:
+    # flush_l2 = os.getenv("FLUSH_L2", "OFF") == "ON"
+    n_wait = 1
+    n_warmup = 10
+    n_repeat = 100
+    # if flush_l2:
+    cache = torch.empty(int(256e6), dtype=torch.int8, device="cuda")
+    start_event = [
+        torch.cuda.Event(enable_timing=True) for i in range(n_repeat)
+    ]
+    end_event = [
+        torch.cuda.Event(enable_timing=True) for i in range(n_repeat)
+    ]
+
+    # Warm-up
+    for _ in range(n_warmup):
+        f()
+
+    # Benchmark
+    # Repeat 
+    for i in range(n_repeat):
+        # we clear the L2 cache before each run
+        cache.zero_()
+        # record time of `fn`
+        start_event[i].record()
+        f()
+        end_event[i].record()
+    # Record clocks
+    torch.cuda.synchronize()
+    times = torch.tensor([s.elapsed_time(e) for s, e in zip(start_event, end_event)])
+    dur = torch.mean(times).item()
+    print(F"#### Run {len(times)} times (warm up {n_warmup}) in ms:")
+    for t in times:
+        print("#### {:.6}".format(t))
+    
+    return dur
+
 
 
 def build_list_of_list(bucket_widths):
@@ -200,7 +252,13 @@ def build_hyb_format(g: MTX,
             
             col_indices[part_ind][bucket_ind].append(col_ind)
             mask[part_ind][bucket_ind].append(1)
-
+            # # test
+            # print(F"len(col_indices[part_ind={part_ind}][bucket_ind={bucket_ind}]): {len(col_indices[part_ind][bucket_ind])} {col_indices[part_ind][bucket_ind]} col_ind: {col_ind}")
+            # # end test
+    # # test
+    # print(F"#207 len(col_indices[0][1]): {len(col_indices[0][1])}")  
+    # # end test
+            
     # # test
     # for part_ind in range(num_parts):
     #     b_widths = bucket_widths[part_ind]
@@ -281,7 +339,7 @@ def bench_hyb_with_config(g,
                           coarsening_factor=2,
                           num_col_parts=1,
                           use_implicit_unroll=False):
-    """Build and benchmark the SpMM kernel using hyb format
+    """Build and benchmark the SpMM kernel using hyb format basedon SparseTIR and TVM.
 
     """
     tvm_start_time = time.perf_counter()
@@ -411,6 +469,8 @@ def bench_hyb_with_config(g,
             # # end test
             # io, ioi, ii = sch.split(i, [None, bucket_sizes[-1] // bucket_size, 8])
             io, ioi, ii = sch.split(i, [None, b_widths[-1] // bucket_size, 8])
+            # io, ioi, ii = sch.split(i, [b_widths[-1] // bucket_size, 8])
+            # io, ii = sch.split(i, [1, 8])
             sch.bind(io, "blockIdx.x")
             sch.bind(ii, "threadIdx.y")
             init_blk = sch.decompose_reduction(blk, fi)
@@ -463,6 +523,15 @@ def bench_hyb_with_config(g,
     tvm_exe_time = tvm_end_time - tvm_start_time
     print(F"tvm_schedule_time(s): {tvm_exe_time:.6}")
 
+    # test
+    # dev_module = func.imported_modules[0]
+    # print(dev_module.get_source())
+
+    # dev_module = f.imported_modules[0]
+    # print(dev_module.get_source())
+    # sys.exit(-1)
+    # end test
+
     # test accuracy
     f(*args)
     tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
@@ -470,21 +539,41 @@ def bench_hyb_with_config(g,
 
     # evaluate time
     dur = profile_tvm_ms(f, args)
+    # dur = profile_tvm_ms(f, args)
     print("tir hyb time: {:.6f} ms".format(dur))
 
     return dur
 
 
 def get_bucket_widths_list(buckets: dict):
+    """Return list of bucket widths for a partition.
+
+    Args:
+        buckets (dict): A dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+
+    Returns:
+        List: A list of bucket widths for the given partition. [w_0, w_1, ...].
+    """
     bucket_pool = list(buckets.keys())
     bucket_pool.sort()
 
     return bucket_pool
 
 
-def move_largest_bucket(buckets: dict,
+def move_largest_bucket(buckets: dict, 
                         pre_max_width: int,
                         new_max_width: int):
+    """Move elements in the largest bucket to the new largest bucket. 
+    new_max_width == pre_max_width/2
+
+    Args:
+        buckets (dict) *OUTPUT*: A dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+        pre_max_width (int): old largest bucket width
+        new_max_width (int): new largest bucket width.
+    """
+    # # test
+    # print(F"pre_max_width: {pre_max_width} new_max_width: {new_max_width}")
+    # # end test
     larger_bucket = buckets[pre_max_width]
     ratio = pre_max_width // new_max_width
     new_num_rows = larger_bucket.num_rows * ratio
@@ -497,16 +586,16 @@ def move_largest_bucket(buckets: dict,
     del buckets[pre_max_width]
 
 
-def get_bubble_overhead(buckets: dict):
-    """Get the bubble overhead of all buckets
+def get_bubble_overhead(buckets_dict: dict):
+    """Get the bubble overhead of all buckets in a partition
 
     Args:
-        buckets (dict): Dictionary of bucket width to Bucket object
+        buckets_dict (dict): A dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
     """
-    origin_max_width = max(buckets.keys())
+    origin_max_width = max(buckets_dict.keys())
     overhead = 0
 
-    for width, bucket in buckets.items():
+    for width, bucket in buckets_dict.items():
         num_rows = bucket.num_rows
         shape_rows = origin_max_width / width
         remaining = num_rows % shape_rows  # num_rows % shape_rows
@@ -524,10 +613,21 @@ def get_bubble_overhead(buckets: dict):
     return overhead
 
 
-def get_memory_overhead(buckets: dict,
+def get_memory_overhead(buckets_dict: dict,
                     pre_max_width: int,
                     new_max_width: int):
-    larger_bucket = buckets[pre_max_width]
+    """Return the memory access overhead for moving elements from the previous largest bucket to the new largest bucket. 
+    new_max_width == pre_max_width/2
+
+    Args:
+        buckets_dict (dict): A dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+        pre_max_width (int): old largest bucket width.
+        new_max_width (int): new largest bucket width.
+
+    Returns:
+        float: memory access overhead
+    """
+    larger_bucket = buckets_dict[pre_max_width]
     ratio = pre_max_width / new_max_width
     cost = (ratio - 1) * larger_bucket.num_rows
 
@@ -544,46 +644,49 @@ def get_memory_overhead(buckets: dict,
     return cost    
 
 
-def modify_bucket_widths(buckets: dict):
-    """Modify initial bucket settings by using a cost model.
+def modify_bucket_widths(buckets_dict: dict,
+                         cost_model_config: CostModelSettings):
+    """Modify initial bucket settings of a partition by using a cost model.
 
     Args:
-        buckets (Dict{bucket_width: Bucket}): Dictionary of bucket width to Bucket object.
+        buckets_dict (Dict{bucket_width: Bucket}): A dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
     """
     # # test
     # for width, bk in buckets.items():
     #     print(F"504 width: {width} bucket: {bk}")
     # # end test
     # Get original overhead as baseline
-    base_overhead = get_bubble_overhead(buckets)
-    base_buckets_list = get_bucket_widths_list(buckets)
+    base_overhead = get_bubble_overhead(buckets_dict)
+    base_buckets_list = get_bucket_widths_list(buckets_dict)
     min_overhead = base_overhead
     best_setting = base_buckets_list
     # # test
     # print(F"base_overhead: {base_overhead} base_buckets_list: {base_buckets_list}")
     # # end test
 
-    origin_max_width = max(buckets.keys())
+    origin_max_width = max(buckets_dict.keys())
     pre_max_width = origin_max_width
     new_max_width = pre_max_width // 2
+    mem_w = cost_model_config.mem_w
+    bub_w = cost_model_config.bub_w
     while new_max_width >= 1:
         # # test
         # print(F"pre_max_width: {pre_max_width} new_max_width: {new_max_width}")
         # # end test
         # Calculate the overhead if change the max bucket width
-        mem_overhead = get_memory_overhead(buckets, pre_max_width, new_max_width)
-        move_largest_bucket(buckets, pre_max_width, new_max_width)
+        mem_overhead = get_memory_overhead(buckets_dict, pre_max_width, new_max_width)
+        move_largest_bucket(buckets_dict, pre_max_width, new_max_width)
         # # test
-        # for width, bk in buckets.items():
+        # for width, bk in buckets_dict.items():
         #     print(F"539 width: {width} bucket: {bk}")
         # # end test
-        bb_overhead = get_bubble_overhead(buckets)
-        total_overhead = mem_overhead + 4 * bb_overhead
+        bb_overhead = get_bubble_overhead(buckets_dict)
+        total_overhead = mem_w * mem_overhead + bub_w * bb_overhead
         # # test
         # print(F"mem_overhead: {mem_overhead} bb_overhead: {bb_overhead} total_overhead: {total_overhead}")
         # # end test
         if total_overhead < min_overhead:
-            best_setting = get_bucket_widths_list(buckets)
+            best_setting = get_bucket_widths_list(buckets_dict)
             min_overhead = total_overhead
         pre_max_width = new_max_width
         new_max_width //= 2
@@ -591,7 +694,16 @@ def modify_bucket_widths(buckets: dict):
     return best_setting
 
 
-def get_bucket_config(init_buckets):
+def get_bucket_config(init_buckets: list,
+                      cost_model_config: CostModelSettings):
+    """Return bucket configurations.
+
+    Args:
+        init_buckets (list): List of dictionary. len(List) == num_parts. Every dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+
+    Returns:
+        List of lists: len(List) == num_parts. Every inner list contains bucket sizes. [[w_0_0, w_0_1, ...], [w_1_0, w_1_1, ...], ...].
+    """
     num_parts = len(init_buckets)
     bucket_config = []
 
@@ -606,7 +718,7 @@ def get_bucket_config(init_buckets):
         # # test
         # print(F"old buckets setting: {get_bucket_widths_list(buckets)}")
         # # end test
-        bucket_widths = modify_bucket_widths(buckets)
+        bucket_widths = modify_bucket_widths(buckets, cost_model_config)
         # # test
         # print(F"537 bucket_widths: {bucket_widths}")
         # # end test
@@ -618,15 +730,162 @@ def get_bucket_config(init_buckets):
     return bucket_config
 
 
+def get_init_buckets(g: MTX, 
+                     num_parts: int, 
+                     width_limit: int=1024):
+        """Return the initial buckets of the matrix
+
+        Args:
+            num_parts (int): number of partitions
+            width_limit (int, optional): The maximum limit of the bucket width. Defaults to 1024.
+
+        Returns:
+            List of dictionary: List of dictionary. len(List) == num_parts. Every dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+        """
+        # row_indices = [None] * num_parts
+        # col_indices = [None] * num_parts
+
+        num_rows = g.num_src_nodes()
+        num_cols = g.num_dst_nodes()
+        partition_size = (num_cols + num_parts - 1) // num_parts
+
+        # # test
+        # print(F"num_rows: {num_rows} num_cols: {num_cols} num_parts: {num_parts} partition_size: {partition_size}")
+        # # end test
+
+        # Count the degree of each row in each partition
+        # degree_counter shape is partition_size * num_rows
+        degree_counter = [ [0] * num_rows for i in range(num_parts) ]
+        for row_ind, col_ind in zip(g.coo_mtx.row, g.coo_mtx.col):
+            part_ind = col_ind // partition_size
+            degree_counter[part_ind][row_ind] += 1
+        
+        # # test
+        # for part_ind in range(num_parts):
+        #     print(F"degree_counter[{part_ind}]: {degree_counter[part_ind]}")
+        # # end test
+
+        # Put rows into its corresponding bucket, a row with length l and
+        # 2^{i - 1} < l <= 2^{i} should be in the bucket with width 2^{i}
+        buckets = []
+        for part_ind in range(num_parts):
+            # buckets.append({})
+            b_pool = {}
+            for row_ind in range(num_rows):
+                degree = degree_counter[part_ind][row_ind]
+                # # test
+                # print(F"degree_counter[{part_ind}][{row_ind}]: {degree}")
+                # # end test
+                if 0 == degree:
+                    continue
+                pow_ceil = math.ceil(math.log2(degree))
+                width = int(2 ** pow_ceil)
+                new_rows = 1
+                if width > width_limit:
+                    # Limit the width according to GPU block thread limit (1024 for CUDA)
+                    ratio = width // width_limit
+                    width = width_limit
+                    new_rows *= ratio
+
+                if width not in b_pool:
+                    # A new bucket
+                    b_pool[width] = Bucket(width, new_rows, degree)
+                else:
+                    # Existing bucket
+                    b_pool[width].nnz += degree
+                    b_pool[width].num_rows += new_rows
+            b_pool = dict(sorted(b_pool.items())) # sort by keys
+            buckets.append(b_pool)
+        
+        return buckets
+
+
+def move_width_one_bucket(buckets_dict: dict,
+                          widths_list: list):
+    """If the bucket width is 1 and number of rows of the bucket is also 1 (i.e., only has 1 element in the bucket), move the elements into a existing larger bucket.
+
+    Args:
+        buckets_dict (dict): A dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+        widths_list (list): Bucket widths of this partition, [w_0, w_1, ...]
+
+    Raises:
+        ValueError: if the bucket only has one element, raise an exception.
+    """
+    base_width = 1
+    new_width = 2
+    max_width = max(widths_list)
+    while new_width <= max_width and new_width not in widths_list:
+        new_width *= 2
+    
+    if new_width > max_width:
+        raise ValueError("The partition is too small, only having 1 non-zero element.")
+    else:
+        move_largest_bucket(buckets_dict, base_width, new_width)
+
+
+
+
+def modify_single_row_buckets(buckets: list):
+    """If a bucket only had 1 row, move this row to a smaller bucket to that SparseTIR would not crash.
+
+    Args:
+        buckets (list) *OUTPUT*: List of dictionary. len(List) == num_parts. Every dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+
+    Raises:
+        ValueError: _description_
+    """
+    num_parts = len(buckets)
+    for part_ind in range(num_parts):
+        b_pool = buckets[part_ind]
+        widths_list = list(b_pool.keys())
+        widths_list.sort(reverse=True)
+        # The width from large to small
+        for width in widths_list:
+            num_rows = b_pool[width].num_rows
+            if num_rows == 1:
+                # SparseTIR does not support singl-row bucket
+                # Move this row to the smaller bucket
+                if width == 1:
+                    # raise ValueError("The partition is too small, only having 1 non-zero element.")
+                    move_width_one_bucket(b_pool, widths_list)
+                else:
+                    new_width = width // 2
+                    move_largest_bucket(b_pool, width, new_width)
+
+
+def _print_buckets(buckets: list):
+    num_parts = len(buckets)
+    for part_ind in range(num_parts):
+        b_pool = buckets[part_ind]
+        for w, b in b_pool.items():
+            print(F"part_ind: {part_ind} width: {w} Bucket: {b}")
+
+
 def search_bucket_config(g: MTX,
                         # x,
                         # y_ndarray,
                         # feat_size,
-                        num_partitions):
+                        num_parts: int,
+                        cost_model_config: CostModelSettings):
                         # coarsening_factor,
                         # use_implicit_unroll):
+    """Searching the bucket sizes.
+
+    Args:
+        g (MTX): the matrix
+        num_parts (int): number of partitions
+
+    Returns:
+        List of lists: len(List) == num_parts. Every inner list contains bucket sizes. [[w_0_0, w_0_1, ...], [w_1_0, w_1_1, ...], ...].
+    """
     # init_buckets()
-    init_buckets = g.init_buckets(num_partitions)
+    # Initial buckets are list of dictionary. len(List) == num_parts. Every dictionary is for a partition, and every dictionary element is a bucket {width: Bucket()}.
+    # init_buckets = g.init_buckets(num_parts)
+    init_buckets = get_init_buckets(g, num_parts)
+    # # test
+    # print("\ninit_buckets:")
+    # _print_buckets(init_buckets)
+    # # end test
     # # test
     # for part_ind in range(num_partitions):
     #     buckets = init_buckets[part_ind]
@@ -634,7 +893,16 @@ def search_bucket_config(g: MTX,
     #     for width, bucket in buckets.items():
     #         print(F"bucekt: width={width} num_rows={bucket.num_rows} nnz={bucket.nnz}")
     # # end test
-            
-    bucket_config = get_bucket_config(init_buckets)
+
+    modify_single_row_buckets(init_buckets)
+    # # test
+    # print("\nupdated_buckets")
+    # _print_buckets(init_buckets)
+    # # sys.exit(-1)
+    # # end test
+    
+    # Get bucket configuration, a list of lists. len(List) == num_parts. Every inside list contains bucket sizes. [[w_0_0, w_0_1, ...], [w_1_0, w_1_1, ...], ...].
+    # bucket_config = get_bucket_config(init_buckets, cost_model_config)
+    bucket_config = get_bucket_config(init_buckets, cost_model_config)
 
     return bucket_config

@@ -1,0 +1,24 @@
+MATRICES=( \
+"cora" \
+"citeseer" \
+"pubmed" \
+"ppi" \
+"arxiv" \
+"proteins" \
+"reddit" \
+"pdb1HYS" \
+"rma10" \
+"cant" \
+"consph" \
+"conf6_0-8x8-80" \
+"pwtk" \
+"shipsec1" \
+"cop30k_A" \
+"dc2" \
+"scircuit" \
+"mac_econ_fwd500" \
+"ins2" \
+"ASIC_680k" \
+"mc2depi" \
+"webbase-1M" \
+)

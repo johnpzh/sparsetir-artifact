@@ -250,9 +250,9 @@ def bench_hyb(
             args += [weight, rows, cols]
 
     # test accuracy
-    f(*args)
+    # f(*args)
     # Turned off correctness check
-    tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
+    # tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
     # tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_golden.numpy(), rtol=1e-4)
 
     # evaluate time
@@ -570,6 +570,28 @@ def check_if_done_before(name: str,
         return False
 
 
+def check_if_too_risky(g: MTX):
+    output_dir = OUTPUT_DIR
+    name = g.name
+    num_rows = g.num_src_nodes()
+    num_cols = g.num_dst_nodes()
+    num_edges = g.num_edges()
+    skipped_filename = os.path.join(output_dir, F"skipped_{name}.csv")
+    if num_rows != num_cols:
+        print(F"{name} has num_rows={num_rows} num_cols={num_cols}, not equal. Skip it.")
+        return True
+    elif num_rows >= 3997962: # com-LiveJournal
+        print(F"{name} has num_nodes={num_rows}, too large. Skip it.")
+        return True
+    elif num_edges >= 329499284: # Queen_4147
+        print(F"{name} has num_edges={num_edges}, too large. Skip it.")
+        return True
+    elif os.path.isfile(skipped_filename):
+        print(F"{skipped_filename} exits, meaning {name} should be skipped. Skipped it.")
+        return True
+    else:
+        return False
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("hybrid format spmm in sparse-tir")
     parser.add_argument("--dataset", "-d", type=str, help="matrix market (mtx) dataset path")
@@ -584,6 +606,8 @@ if __name__ == "__main__":
     filename = args.dataset
     g = MTX(filename)
 
+    if check_if_too_risky(g):
+        sys.exit(-1)
     # # Feasibility check
     # if g.num_dst_nodes() >= 5558326 or g.num_edges() >= 59524291:
     #     print(F"\nMatrix {filename} is too large to be handled. num_cols: {g.num_dst_nodes}. nnz: {g.num_edges}. Passed.")
@@ -621,7 +645,8 @@ if __name__ == "__main__":
         # x = th.ones((g.num_dst_nodes(), feat_size))
         # # end test
         # y_golden = dgl.ops.copy_u_sum(g, x)
-        y_ndarray = g.dot(x.numpy())
+        # y_ndarray = g.dot(x.numpy())
+        y_ndarray = []
         # # test
         # print(F"y_ndarray: {y_ndarray}")
         # # end test

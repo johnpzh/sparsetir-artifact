@@ -8,6 +8,7 @@ export CUDA_VISIBLE_DEVICES="0"
 app="bench_suitesparse_spmm_hyb.search.v6.cost_model.from_csv.py"
 # csv_feature="suitesparse_108_single_sp-ge-1.1_050424.csv"
 csv_feature="suitesparse_1083_single_sp-ge-1.1_050424.csv"
+# csv_feature="suitesparse_27_crashed_single_sp-ge-1.1_050424.csv"
 # csv_feature="suitesparse_incorrect_3_matrices_050224.csv"
 
 output_dir="output.cost_model"

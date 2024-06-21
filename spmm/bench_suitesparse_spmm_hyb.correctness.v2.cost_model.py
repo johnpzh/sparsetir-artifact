@@ -42,7 +42,8 @@ from format_matrix_market import MTX
 from format_algos import (
     build_hyb_format,
     bench_hyb_with_config,
-    search_bucket_config
+    search_bucket_config,
+    CostModelSettings
 )
 
 
@@ -541,6 +542,7 @@ if __name__ == "__main__":
     MAX_BUCKET_SIZES    = [64]
     # PARTITIONS          = PARTITIONS_SET[name]
     # MAX_BUCKET_SIZES    = MAX_BUCKET_SIZES_SET[name]
+    cost_model_config = CostModelSettings(0.5, 0.5)
     for feat_size in [32]:
     # for feat_size in [32, 64, 128, 256, 512]:
         features = g.matrix_features()
@@ -559,7 +561,7 @@ if __name__ == "__main__":
             width_exe_times = []
             for num_p in PARTITIONS:
                 # Get bucket_config
-                bucket_config = search_bucket_config(g, num_p)
+                bucket_config = search_bucket_config(g, num_p, cost_model_config)
                 # bucket_config = get_bucket_config(width)
                 # bucket_config = [[1, 2, 4, 8, 16, 32, 64]]
                 # bucket_config = [[1, 2, 4, 8, 16]]
@@ -570,7 +572,8 @@ if __name__ == "__main__":
                 # bucket_config = [[4, 5]]
                 # bucket_config = [[1, 2, 4, 8]]
                 # bucket_config = [[1, 2, 4]]
-                bucket_config = [[1, 2], [2, 8, 1024]]
+                # bucket_config = [[1, 2], [2, 8, 1024]]
+                # bucket_config = [[1, 2, 4, 8, 16], [1, 2, 4, 8, 16]]
                 hyb_format = build_hyb_format_local(g, num_p, bucket_config)
                 # test
                 # bucket_config = [1, 2, 4, 8, 32, 64]

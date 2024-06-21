@@ -6,48 +6,48 @@ import sys
 import os
 from sklearn.ensemble import RandomForestClassifier
 
-def split(feature_file: str,
-         train_ratio: float):
-    output_dir = "data"
-    df = pd.read_csv(feature_file)
+# def split(feature_file: str,
+#          train_ratio: float):
+#     output_dir = "data"
+#     df = pd.read_csv(feature_file)
 
-    # Drop duplicated matrices by names
-    df = df[df["speed_to_naive"] >= 1.1] # Drop slowdown cases
-    # df.drop_duplicates(subset=['name'], inplace=True, keep='last') # Drop duplicate names
-    df.drop_duplicates(subset=['name'], inplace=True) # Drop duplicate names
-    # df.drop(columns=['K'], inplace=True) # Drop column 'K'
-    # df.dropna(inplace=True) # Drop rows with any NaN
+#     # Drop duplicated matrices by names
+#     df = df[df["speed_to_naive"] >= 1.1] # Drop slowdown cases
+#     # df.drop_duplicates(subset=['name'], inplace=True, keep='last') # Drop duplicate names
+#     df.drop_duplicates(subset=['name'], inplace=True) # Drop duplicate names
+#     # df.drop(columns=['K'], inplace=True) # Drop column 'K'
+#     # df.dropna(inplace=True) # Drop rows with any NaN
 
-    # Divide data
-    num_rows = df.shape[0]
-    num_trains = int(num_rows * train_ratio)
-    if num_trains == num_rows:
-        num_trains = num_rows - 1
-    num_tests = num_rows - num_trains
-    random_indices = np.random.randint(low=0, high=num_rows, size=(num_tests))
-    train_df = pd.DataFrame()
-    test_df = pd.DataFrame()
-    for row_ind in range(num_rows):
-        if row_ind in random_indices:
-            test_df = pd.concat([test_df, df.iloc[row_ind:row_ind + 1]])
-        else:
-            train_df = pd.concat([train_df, df.iloc[row_ind:row_ind + 1]])
+#     # Divide data
+#     num_rows = df.shape[0]
+#     num_trains = int(num_rows * train_ratio)
+#     if num_trains == num_rows:
+#         num_trains = num_rows - 1
+#     num_tests = num_rows - num_trains
+#     random_indices = np.random.randint(low=0, high=num_rows, size=(num_tests))
+#     train_df = pd.DataFrame()
+#     test_df = pd.DataFrame()
+#     for row_ind in range(num_rows):
+#         if row_ind in random_indices:
+#             test_df = pd.concat([test_df, df.iloc[row_ind:row_ind + 1]])
+#         else:
+#             train_df = pd.concat([train_df, df.iloc[row_ind:row_ind + 1]])
 
-    # Save
-    basename = os.path.splitext(os.path.basename(feature_file))[0]
-    train_file = os.path.join(output_dir, F"{basename}.train_set.csv")
-    test_file = os.path.join(output_dir, F"{basename}.infer_set.csv")
-    train_df.to_csv(train_file, index=False)
-    test_df.to_csv(test_file, index=False)
+#     # Save
+#     basename = os.path.splitext(os.path.basename(feature_file))[0]
+#     train_file = os.path.join(output_dir, F"{basename}.train_set.csv")
+#     test_file = os.path.join(output_dir, F"{basename}.infer_set.csv")
+#     train_df.to_csv(train_file, index=False)
+#     test_df.to_csv(test_file, index=False)
 
-    # # test
-    # print(F"train_df: {train_df}")
-    # print(F"test_df: {test_df}")
-    # # end test
+#     # # test
+#     # print(F"train_df: {train_df}")
+#     # print(F"test_df: {test_df}")
+#     # # end test
 
-    print(F"Ratio {train_ratio} ({num_trains}/{num_rows}) rows saved to {train_file} .")
-    print(F"Ratio {1 - train_ratio} ({num_rows - num_trains}/{num_rows}) rows saved to {test_file} .")
-    ##########
+#     print(F"Ratio {train_ratio} ({num_trains}/{num_rows}) rows saved to {train_file} .")
+#     print(F"Ratio {1 - train_ratio} ({num_rows - num_trains}/{num_rows}) rows saved to {test_file} .")
+#     ##########
 
 
 def drop_duplicate(feature_file: str):

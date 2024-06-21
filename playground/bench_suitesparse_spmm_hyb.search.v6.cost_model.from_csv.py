@@ -27,7 +27,8 @@ from format_matrix_market import MTX
 from format_algos import (
     build_hyb_format,
     bench_hyb_with_config,
-    search_bucket_config
+    search_bucket_config,
+    CostModelSettings
 )
 
 OUTPUT_DIR="output.cost_model"
@@ -136,16 +137,19 @@ if __name__ == "__main__":
     # GPU device
     print(F"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', default=0)}")
 
+    cost_model_config = CostModelSettings(mem_w=0.01, bub_w=0.99)
     cached_config = {}
 
     for name, feat_size, num_parts in zip(names_list, feat_sizes_list, num_partitions_list):
+        print("")
+        print(F"Going to matrix {name} ...")
         filename = F"/raid/peng599/scratch/spmm/data/suitesparse/{name}/{name}.mtx"
         g = MTX(filename)
 
         if name not in cached_config:
             start_time = time.perf_counter()
             # bucket_config = search_bucket_sizes(g, num_parts)
-            bucket_config = search_bucket_config(g, num_parts)
+            bucket_config = search_bucket_config(g, num_parts, cost_model_config)
             end_time = time.perf_counter()
             search_overhead = end_time - start_time
             cached_config[name] = (bucket_config, search_overhead)
@@ -173,7 +177,7 @@ if __name__ == "__main__":
         hyb_format = build_hyb_format(g,
                                     bucket_config)
         name = features["name"]
-        print(F"#### data: {name} feat_size: {feat_size} num_partitions: {num_parts} bucket_config: {bucket_config}", flush=True)
+        print(F"#### data: {name} feat_size: {feat_size} num_partitions: {num_parts} cost_model_config: {cost_model_config} bucket_config: {bucket_config}", flush=True)
         try:
             exe_time = bench_hyb_with_config(g,
                                     x,
