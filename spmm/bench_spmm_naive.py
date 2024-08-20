@@ -46,8 +46,8 @@ def csrmm(
     coarsening_factor: T.int32,
 ) -> None:
     T.func_attr({"global_symbol": "main", "tir.noalias": True, "sparse_tir_level": 2})
-    I = T.dense_fixed(m)
-    J = T.sparse_variable(I, (n, nnz), (indptr, indices), "int32")
+    I = T.dense_fixed(m)                                                # I is a dense index of size m
+    J = T.sparse_variable(I, (n, nnz), (indptr, indices), "int32")      # J is a sparse index of size n x nnz and is defined by values
     J_detach = T.dense_fixed(n)
     K1 = T.dense_fixed(num_tiles)
     K2 = T.dense_fixed(coarsening_factor)
