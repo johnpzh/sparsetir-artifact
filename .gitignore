@@ -11,3 +11,9 @@ __pycache__/
 *.egg-info/
 data
 *.joblib
+
+# Save some special files
+!playground_v4_pipeline/data
+
+playground_v4_pipeline/data/*
+!playground_v4_pipeline/data/output_2279_total.csv

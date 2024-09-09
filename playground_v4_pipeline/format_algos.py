@@ -3,7 +3,9 @@ import numpy as np
 import bisect
 import tvm
 import tvm.testing
+import tvm.tir as tir
 from tvm.script import tir as T
+from tvm.sparse import lower_sparse_buffer, lower_sparse_iter
 from tvm.sparse import (
     FormatRewriteRule,
     lower_sparse_buffer,
@@ -17,11 +19,22 @@ import time
 import sys
 import math
 from typing import List, Callable, Any, Tuple, Union
-import torch
+import torch as th
 from scipy.stats import variation
 import pandas as pd
 
-__all__ = ["build_hyb_format", "bench_hyb_with_config", "search_bucket_config", "CostModelSettings"]
+__all__ = ["build_hyb_format", 
+           "bench_hyb_with_config", 
+           "search_bucket_config", 
+           "CostModelSettings",
+           "bench_bsrmm",
+           "bench_naive"]
+
+# ################# #
+# ----------------- #
+# CELL Format
+# ----------------- #
+# ################# #
 
 class CostModelSettings:
     # def __init__(self, mem_w: float, bub_w: float):
@@ -155,12 +168,12 @@ def run_100_times(f: Callable[[], None]) -> float:
     n_warmup = 0
     n_repeat = 1
     # if flush_l2:
-    cache = torch.empty(int(256e6), dtype=torch.int8, device="cuda")
+    cache = th.empty(int(256e6), dtype=th.int8, device="cuda")
     start_event = [
-        torch.cuda.Event(enable_timing=True) for i in range(n_repeat)
+        th.cuda.Event(enable_timing=True) for i in range(n_repeat)
     ]
     end_event = [
-        torch.cuda.Event(enable_timing=True) for i in range(n_repeat)
+        th.cuda.Event(enable_timing=True) for i in range(n_repeat)
     ]
 
     # Warm-up
@@ -177,9 +190,9 @@ def run_100_times(f: Callable[[], None]) -> float:
         f()
         end_event[i].record()
     # Record clocks
-    torch.cuda.synchronize()
-    times = torch.tensor([s.elapsed_time(e) for s, e in zip(start_event, end_event)])
-    dur = torch.mean(times).item()
+    th.cuda.synchronize()
+    times = th.tensor([s.elapsed_time(e) for s, e in zip(start_event, end_event)])
+    dur = th.mean(times).item()
     print(F"#### Run {len(times)} times (warm up {n_warmup}) in ms:")
     for t in times:
         print("#### {:.6}".format(t))
@@ -382,7 +395,8 @@ def bench_hyb_with_config(g,
                           bucketing_format=[],
                           coarsening_factor=2,
                           num_col_parts=1,
-                          use_implicit_unroll=False):
+                          use_implicit_unroll=False,
+                          check_correctness=False):
     """Build and benchmark the SpMM kernel using hyb format basedon SparseTIR and TVM.
 
     """
@@ -579,13 +593,14 @@ def bench_hyb_with_config(g,
 
     # # test accuracy
     f(*args)
-    tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
+    if check_correctness:
+        tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
     # # tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_golden.numpy(), rtol=1e-4)
 
     # evaluate time
     dur = profile_tvm_ms(f, args)
     # dur = profile_100_runs_ms(f, args)
-    print("tir hyb time: {:.6f} ms".format(dur))
+    print("cell exe time: {:.6f} ms".format(dur))
 
     return dur
 
@@ -1149,3 +1164,595 @@ def get_memory_cost(bucket_dict: dict,
     # return cost, cost1, cost2, cost3
     # return max_load, cost1, cost2, cost3
     return return_dict
+
+
+# ################# #
+# ----------------- #
+# End CELL Format
+# ----------------- #
+# ################# #
+
+
+# ################# #
+# ----------------- #
+# BSR Format
+# ----------------- #
+# ################# #
+
+def bsrmm(mb, nb, nnz, blk, feat_size):
+    @T.prim_func
+    def func(
+        a: T.handle,
+        b: T.handle,
+        c: T.handle,
+        indptr: T.handle,
+        indices: T.handle,
+    ) -> None:
+        T.func_attr(
+            {"global_symbol": "main", "tir.noalias": True, "sparse_tir_level": 2}
+        )
+        I = T.dense_fixed(mb)
+        J = T.sparse_variable(I, (nb, nnz), (indptr, indices), "int32")
+        J_detach = T.dense_fixed(nb)
+        BI = T.dense_fixed(blk)
+        BJ = T.dense_fixed(blk)
+        F = T.dense_fixed(feat_size)
+        A = T.match_sparse_buffer(a, (I, J, BI, BJ), "float16")
+        B = T.match_sparse_buffer(b, (J_detach, BJ, F), "float16")
+        C = T.match_sparse_buffer(c, (I, BI, F), "float16")
+
+        with T.iter([I, BI, BJ, F, J], "SSRSR", "bsrmm") as [
+            i,
+            bi,
+            bj,
+            f,
+            j,
+        ]:
+            with T.init():
+                C[i, bi, f] = T.float16(0.0)
+            C[i, bi, f] = C[i, bi, f] + A[i, j, bi, bj] * B[j, bj, f]
+
+    return func
+
+
+@T.prim_func
+def wmma_sync_desc(a_frag: T.handle, b_frag: T.handle, c_frag: T.handle) -> None:
+    A_frag = T.match_buffer(
+        a_frag, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_a"
+    )
+    B_frag = T.match_buffer(
+        b_frag, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_b"
+    )
+    C_frag = T.match_buffer(
+        c_frag,
+        (16, 16),
+        "float16",
+        align=128,
+        offset_factor=1,
+        scope="wmma.accumulator",
+    )
+
+    with T.block("root"):
+        for i, j, k in T.grid(16, 16, 16):
+            with T.block("update"):
+                vii, vjj, vkk = T.axis.remap("SSR", [i, j, k])
+                T.block_attr({"sparse": True})
+                C_frag[vii, vjj] = (
+                    C_frag[vii, vjj] + A_frag[vii, vkk] * B_frag[vkk, vjj]
+                )
+
+
+@T.prim_func
+def wmma_sync_impl(a_frag: T.handle, b_frag: T.handle, c_frag: T.handle) -> None:
+    A_frag = T.match_buffer(
+        a_frag, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_a"
+    )
+    B_frag = T.match_buffer(
+        b_frag, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_b"
+    )
+    C_frag = T.match_buffer(
+        c_frag,
+        (16, 16),
+        "float16",
+        align=128,
+        offset_factor=1,
+        scope="wmma.accumulator",
+    )
+
+    with T.block("root"):
+        T.reads(
+            [
+                C_frag[0:16, 0:16],
+                A_frag[0:16, 0:16],
+                B_frag[0:16, 0:16],
+            ]
+        )
+        T.writes(C_frag[0:16, 0:16])
+        for tx in T.thread_binding(0, 32, "threadIdx.x"):
+            T.evaluate(
+                T.tvm_mma_sync(
+                    C_frag.data,
+                    C_frag.elem_offset // 256
+                    + T.floordiv(T.floormod(C_frag.elem_offset, 256), 16),
+                    A_frag.data,
+                    A_frag.elem_offset // 256
+                    + T.floordiv(T.floormod(A_frag.elem_offset, 256), 16),
+                    B_frag.data,
+                    B_frag.elem_offset // 256
+                    + T.floordiv(T.floormod(B_frag.elem_offset, 256), 16),
+                    C_frag.data,
+                    C_frag.elem_offset // 256
+                    + T.floordiv(T.floormod(C_frag.elem_offset, 256), 16),
+                    dtype="handle",
+                )
+            )
+
+
+def wmma_load_a(scope: str):
+    @T.prim_func
+    def wmma_load_a_desc(a: T.handle, a_frag: T.handle) -> None:
+        A = T.match_buffer(
+            a, (16, 16), "float16", align=128, offset_factor=1, scope=scope
+        )
+        A_frag = T.match_buffer(
+            a_frag,
+            (16, 16),
+            "float16",
+            align=128,
+            offset_factor=1,
+            scope="wmma.matrix_a",
+        )
+
+        with T.block("root"):
+            T.reads(A[0:16, 0:16])
+            T.writes(A_frag[0:16, 0:16])
+            for i, j in T.grid(16, 16):
+                with T.block("load"):
+                    vii, vjj = T.axis.remap("SS", [i, j])
+                    A_frag[vii, vjj] = A[vii, vjj]
+
+    @T.prim_func
+    def wmma_load_a_impl(a: T.handle, a_frag: T.handle) -> None:
+        s0 = T.var("int32")
+        s1 = T.var("int32")
+        A = T.match_buffer(
+            a,
+            (16, 16),
+            "float16",
+            align=128,
+            offset_factor=1,
+            scope=scope,
+            strides=[s0, s1],
+        )
+        A_frag = T.match_buffer(
+            a_frag,
+            (16, 16),
+            "float16",
+            align=128,
+            offset_factor=1,
+            scope="wmma.matrix_a",
+        )
+
+        with T.block("root"):
+            T.reads(A[0:16, 0:16])
+            T.writes(A_frag[0:16, 0:16])
+            for tx in T.thread_binding(0, 32, "threadIdx.x"):
+                T.evaluate(
+                    T.tvm_load_matrix_sync(
+                        A_frag.data,
+                        16,
+                        16,
+                        16,
+                        A_frag.elem_offset // 256
+                        + T.floordiv(T.floormod(A_frag.elem_offset, 256), 16),
+                        A.access_ptr("r"),
+                        A.strides[0],
+                        "row_major",
+                        dtype="handle",
+                    )
+                )
+
+    return wmma_load_a_desc, wmma_load_a_impl
+
+
+def wmma_load_b(scope: str):
+    @T.prim_func
+    def wmma_load_b_desc(b: T.handle, b_frag: T.handle) -> None:
+        B = T.match_buffer(
+            b, (16, 16), "float16", align=128, offset_factor=1, scope=scope
+        )
+        B_frag = T.match_buffer(
+            b_frag,
+            (16, 16),
+            "float16",
+            align=128,
+            offset_factor=1,
+            scope="wmma.matrix_b",
+        )
+        with T.block("root"):
+            for i, j in T.grid(16, 16):
+                with T.block("load"):
+                    vii, vjj = T.axis.remap("SS", [i, j])
+                    B_frag[vii, vjj] = B[vii, vjj]
+
+    @T.prim_func
+    def wmma_load_b_impl(b: T.handle, b_frag: T.handle) -> None:
+        s0 = T.var("int32")
+        s1 = T.var("int32")
+        B = T.match_buffer(
+            b,
+            (16, 16),
+            "float16",
+            align=128,
+            offset_factor=1,
+            scope=scope,
+            strides=[s0, s1],
+        )
+        B_frag = T.match_buffer(
+            b_frag,
+            (16, 16),
+            "float16",
+            align=128,
+            offset_factor=1,
+            scope="wmma.matrix_b",
+        )
+        with T.block("root"):
+            T.reads(B[0:16, 0:16])
+            T.writes(B_frag[0:16, 0:16])
+            for tx in T.thread_binding(0, 32, "threadIdx.x"):
+                T.evaluate(
+                    T.tvm_load_matrix_sync(
+                        B_frag.data,
+                        16,
+                        16,
+                        16,
+                        B_frag.elem_offset // 256
+                        + T.floordiv(T.floormod(B_frag.elem_offset, 256), 16),
+                        B.access_ptr("r"),
+                        B.strides[0],
+                        "row_major",
+                        dtype="handle",
+                    )
+                )
+
+    return wmma_load_b_desc, wmma_load_b_impl
+
+
+@T.prim_func
+def wmma_fill_desc(c_frag: T.handle) -> None:
+    C_frag = T.match_buffer(
+        c_frag,
+        (16, 16),
+        "float16",
+        align=128,
+        offset_factor=1,
+        scope="wmma.accumulator",
+    )
+    with T.block("root"):
+        for i, j in T.grid(16, 16):
+            with T.block("init"):
+                vii, vjj = T.axis.remap("SS", [i, j])
+                C_frag[vii, vjj] = T.float16(0)
+
+
+@T.prim_func
+def wmma_fill_impl(c_frag: T.handle) -> None:
+    C_frag = T.match_buffer(
+        c_frag,
+        (16, 16),
+        "float16",
+        align=128,
+        offset_factor=1,
+        scope="wmma.accumulator",
+    )
+    with T.block("root"):
+        T.reads([])
+        T.writes(C_frag[0:16, 0:16])
+        for tx in T.thread_binding(0, 32, "threadIdx.x"):
+            T.evaluate(
+                T.tvm_fill_fragment(
+                    C_frag.data,
+                    16,
+                    16,
+                    16,
+                    C_frag.elem_offset // 256
+                    + T.floordiv(T.floormod(C_frag.elem_offset, 256), 16),
+                    T.float16(0),
+                    dtype="handle",
+                )
+            )
+
+
+@T.prim_func
+def wmma_store_desc(c_frag: T.handle, c: T.handle) -> None:
+    C_frag = T.match_buffer(
+        c_frag,
+        (16, 16),
+        "float16",
+        align=128,
+        offset_factor=1,
+        scope="wmma.accumulator",
+    )
+    C = T.match_buffer(
+        c, (16, 16), "float16", align=128, offset_factor=1, scope="global"
+    )
+    with T.block("root"):
+        for i, j in T.grid(16, 16):
+            with T.block("store"):
+                vii, vjj = T.axis.remap("SS", [i, j])
+                C[vii, vjj] = C_frag[vii, vjj]
+
+
+@T.prim_func
+def wmma_store_impl(c_frag: T.handle, c: T.handle) -> None:
+    s0 = T.var("int32")
+    s1 = T.var("int32")
+    C_frag = T.match_buffer(
+        c_frag,
+        (16, 16),
+        "float16",
+        align=128,
+        offset_factor=1,
+        scope="wmma.accumulator",
+    )
+    C = T.match_buffer(
+        c,
+        (16, 16),
+        "float16",
+        align=128,
+        offset_factor=1,
+        scope="global",
+        strides=[s0, s1],
+    )
+    with T.block("root"):
+        T.reads(C_frag[0:16, 0:16])
+        T.writes(C[0:16, 0:16])
+        for tx in T.thread_binding(0, 32, "threadIdx.x"):
+            T.evaluate(
+                T.tvm_store_matrix_sync(
+                    C_frag.data,
+                    16,
+                    16,
+                    16,
+                    C_frag.elem_offset // 256
+                    + T.floordiv(T.floormod(C_frag.elem_offset, 256), 16),
+                    C.access_ptr("w"),
+                    C.strides[0],
+                    "row_major",
+                    dtype="handle",
+                )
+            )
+
+
+WMMA_SYNC = tir.TensorIntrin.register(
+    "wmma_sync",
+    wmma_sync_desc,
+    wmma_sync_impl,
+)
+
+WMMA_LOAD_A_SHARED = tir.TensorIntrin.register(
+    "wmma_load_a_shared", *wmma_load_a("shared")
+)
+
+WMMA_LOAD_A_GLOBAL = tir.TensorIntrin.register(
+    "wmma_load_a_global", *wmma_load_a("global")
+)
+
+WMMA_LOAD_B_SHARED = tir.TensorIntrin.register(
+    "wmma_load_b_shared", *wmma_load_b("shared")
+)
+
+WMMA_LOAD_B_GLOBAL = tir.TensorIntrin.register(
+    "wmma_load_b_global", *wmma_load_b("global")
+)
+
+WMMA_FILL = tir.TensorIntrin.register(
+    "wmma_fill",
+    wmma_fill_desc,
+    wmma_fill_impl,
+)
+
+WMMA_STORE = tir.TensorIntrin.register(
+    "wmma_store",
+    wmma_store_desc,
+    wmma_store_impl,
+)
+
+
+def bench_bsrmm(bsr_mat: Any, x: th.Tensor, block_size: int):
+    global bsrmm
+    mb = bsr_mat.shape[0] // bsr_mat.blocksize[0]
+    nb = bsr_mat.shape[1] // bsr_mat.blocksize[1]
+    nnzb = bsr_mat.nnz // (block_size**2)
+    feat_size = x.shape[1]
+    ind = (bsr_mat.indptr[1:] - bsr_mat.indptr[:-1]).nonzero()[0]
+    print(bsr_mat.indptr[ind + 1] - bsr_mat.indptr[ind])
+
+    mod = tvm.IRModule.from_expr(bsrmm(mb, nb, nnzb, block_size, feat_size))
+    sch = tvm.tir.Schedule(mod)
+    sp_iteration = sch.get_sparse_iteration("bsrmm")
+    i, bi, bj, f, j = sch.get_sp_iters(sp_iteration)
+    sch.sparse_reorder(sp_iteration, [i, j, bi, f, bj])
+    mod = lower_sparse_iter(sch.mod)
+    sch = tir.Schedule(mod)
+    blk_inner = sch.get_block("bsrmm1")
+    blk_outer = sch.get_block("bsrmm0")
+    j, bi, f, bj = sch.get_loops(blk_inner)
+    bio, bii = sch.split(bi, [block_size // 16, 16])
+    bjo, bji = sch.split(bj, [block_size // 16, 16])
+    foo, foi, fi = sch.split(f, [None, 2, 16])
+    sch.reorder(foo, j, bio, foi, bjo, bii, fi, bji)
+    sch.unroll(foi)
+    (i,) = sch.get_loops(blk_outer)
+    sch.bind(i, "blockIdx.x")
+    sch.bind(bio, "threadIdx.y")
+    sch.bind(foo, "blockIdx.y")
+    C_local = sch.cache_write(blk_inner, 0, "wmma.accumulator")
+    sch.reverse_compute_at(C_local, foo, True)
+    ax0, ax1 = sch.get_loops(C_local)[-2:]
+    ax2, ax3 = sch.split(ax1, [None, 16])
+    ax0, ax1 = sch.split(ax0, [None, 16])
+    sch.reorder(ax0, ax2, ax1, ax3)
+    sch.unroll(ax2)
+    sch.bind(ax0, "threadIdx.y")
+    init_blk = sch.decompose_reduction(blk_inner, j)
+    A_local = sch.cache_read(blk_inner, 1, "wmma.matrix_a")
+    sch.compute_at(A_local, bio)
+    ax0, ax1 = sch.get_loops(A_local)[-2:]
+    ax1, ax2 = sch.split(ax1, [None, 16])
+    sch.reorder(ax1, ax0, ax2)
+    sch.unroll(ax1)
+    B_shared = sch.cache_read(blk_inner, 2, "shared")
+    sch.compute_at(B_shared, foi)
+    B_local = sch.cache_read(blk_inner, 2, "wmma.matrix_b")
+    sch.compute_at(B_local, bjo)
+    sch.hide_buffer_access(blk_inner, "read", [3])
+    sch.tensorize(sch.get_loops(blk_inner)[-3], "wmma_sync")
+    sch.tensorize(sch.get_loops(B_local)[-2], "wmma_load_b_shared")
+    sch.tensorize(sch.get_loops(A_local)[-2], "wmma_load_a_global")
+    sch.tensorize(sch.get_loops(C_local)[-2], "wmma_store")
+    sch.tensorize(sch.get_loops(init_blk)[-2], "wmma_fill")
+    # schedule B_shared
+    ax0, ax1 = sch.get_loops(B_shared)[-2:]
+    fused_ax = sch.fuse(ax0, ax1)
+    ax0, ax1, ax2, ax3 = sch.split(fused_ax, [None, 2, 32, 4])
+    sch.vectorize(ax3)
+    sch.bind(ax2, "threadIdx.x")
+    sch.bind(ax1, "threadIdx.y")
+    sch.unroll(ax0)
+
+    mod = lower_sparse_buffer(sch.mod)
+
+    f = tvm.build(mod["main"], target="cuda")
+
+    ctx = tvm.cuda(0)
+    A_indptr = tvm.nd.array(np.copy(bsr_mat.indptr).astype("int32"), device=ctx)
+    A_indices = tvm.nd.array(np.copy(bsr_mat.indices).astype("int32"), device=ctx)
+    A_data = tvm.nd.array(
+        np.copy(bsr_mat.data).reshape(-1).astype("float16"), device=ctx
+    )
+    X_nd = tvm.nd.array(np.copy(x.reshape(-1)).astype("float16"), device=ctx)
+    Y_nd = tvm.nd.array(
+        np.zeros((mb * block_size * feat_size), dtype="float16"), device=ctx
+    )
+    args = [A_data, X_nd, Y_nd, A_indptr, A_indices]
+    f(*args)
+
+    avg_time = profile_tvm_ms(f, args)
+    print("bsrmm time: \t{:.5f}ms".format(avg_time))
+    return avg_time
+
+# ################# #
+# ----------------- #
+# End BSR Format
+# ----------------- #
+# ################# #
+
+
+
+
+# ################# #
+# ----------------- #
+# CSR Format
+# ----------------- #
+# ################# #
+
+@T.prim_func
+def csrmm(
+    a: T.handle,
+    b: T.handle,
+    c: T.handle,
+    indptr: T.handle,
+    indices: T.handle,
+    m: T.int32,
+    n: T.int32,
+    num_tiles: T.int32,
+    nnz: T.int32,
+    coarsening_factor: T.int32,
+) -> None:
+    T.func_attr({"global_symbol": "main", "tir.noalias": True, "sparse_tir_level": 2})
+    I = T.dense_fixed(m)
+    J = T.sparse_variable(I, (n, nnz), (indptr, indices), "int32")
+    J_detach = T.dense_fixed(n)
+    K1 = T.dense_fixed(num_tiles)
+    K2 = T.dense_fixed(coarsening_factor)
+    K3 = T.dense_fixed(32)
+    A = T.match_sparse_buffer(a, (I, J), "float32")
+    B = T.match_sparse_buffer(b, (J_detach, K1, K2, K3), "float32")
+    C = T.match_sparse_buffer(c, (I, K1, K2, K3), "float32")
+    with T.iter([I, J, K1, K2, K3], "SRSSS", "csrmm") as [i, j, k1, k2, k3]:
+        with T.init():
+            C[i, k1, k2, k3] = T.float32(0)
+        C[i, k1, k2, k3] = C[i, k1, k2, k3] + A[i, j] * B[j, k1, k2, k3]
+
+
+def bench_naive(
+    g,
+    x,
+    # y_golden,
+    y_ndarray,
+    feat_size=128,
+    coarsening_factor=2,
+):
+    indptr, indices, _ = g.adj_tensors("csc")
+    m = g.num_dst_nodes()
+    n = g.num_src_nodes()
+    nnz = g.num_edges()
+    if feat_size < 64:
+        coarsening_factor = 1
+    mod = tvm.IRModule.from_expr(csrmm)
+    # specialize
+    params = mod["main"].params
+    param_map = {
+        params[5]: m,  # m
+        params[6]: n,  # n
+        params[7]: feat_size // coarsening_factor // 32,  # num_tiles,
+        params[8]: nnz,  # nnz
+        params[9]: coarsening_factor,  # coarsening factor
+    }
+
+    mod["main"] = mod["main"].specialize(param_map)
+
+    # schedule
+    mod = tvm.sparse.lower_sparse_iter(mod)
+    sch = tvm.tir.Schedule(mod)
+    outer_blk = sch.get_block("csrmm0")
+    inner_blk = sch.get_block("csrmm1")
+    (i,) = sch.get_loops(outer_blk)
+    j, foo, foi, fi = sch.get_loops(inner_blk)
+    sch.reorder(foo, fi, j, foi)
+    sch.bind(fi, "threadIdx.x")
+    sch.bind(foo, "blockIdx.y")
+    sch.unroll(foi)
+    io, ii = sch.split(i, [None, 8])
+    sch.bind(io, "blockIdx.x")
+    sch.bind(ii, "threadIdx.y")
+    init_blk = sch.decompose_reduction(inner_blk, fi)
+    ax0, ax1 = sch.get_loops(init_blk)[-2:]
+    sch.bind(ax0, "threadIdx.x")
+    mod = tvm.sparse.lower_sparse_buffer(sch.mod)
+    f = tvm.build(mod["main"], target="cuda")
+    # prepare nd array
+    # indptr_nd = tvm.nd.array(indptr.numpy().astype("int32"), device=tvm.cuda(0))
+    indptr_nd = tvm.nd.array(indptr.astype("int32"), device=tvm.cuda(0))
+    b_nd = tvm.nd.array(
+        x.numpy().reshape(-1).astype("float32"),
+        device=tvm.cuda(0),
+    )
+    # indices_nd = tvm.nd.array(indices.numpy().astype("int32"), device=tvm.cuda(0))
+    indices_nd = tvm.nd.array(indices.astype("int32"), device=tvm.cuda(0))
+    c_nd = tvm.nd.array(np.zeros((n * feat_size,)).astype("float32"), device=tvm.cuda(0))
+    a_nd = tvm.nd.array(np.ones((nnz,)).astype("float32"), device=tvm.cuda(0))
+    args = [a_nd, b_nd, c_nd, indptr_nd, indices_nd]
+    f(*args)
+    # tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_golden.numpy(), rtol=1e-4)
+    tvm.testing.assert_allclose(c_nd.numpy().reshape(-1, feat_size), y_ndarray, rtol=1e-4)
+    dur = profile_tvm_ms(f, args)
+    print("tir naive time: {:.5f} ms".format(dur))
+
+    return dur
+# ################# #
+# ----------------- #
+# End CSR Format
+# ----------------- #
+# ################# #
