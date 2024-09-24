@@ -85,7 +85,7 @@ def predict_format_selection(g: MTX,
     time_s = time_s_end - time_s_start
 
     format = "CELL" if y_pred[0] == 1 else "BCSR"
-    print(f"name: {name} format: {format} time(s): {time_s}")
+    print(f"name: {g.name} format: {format} time(s): {time_s}")
 
     return format, time_s
 
@@ -103,7 +103,7 @@ def predict_num_partitions(g: MTX,
     time_s = time_s_end - time_s_start
 
     num_parts = y_pred[0]
-    print(f"name: {name} num_parts: {num_parts} time(s): {time_s}")
+    print(f"name: {g.name} num_parts: {num_parts} time(s): {time_s}")
 
     return num_parts, time_s
 
@@ -242,7 +242,7 @@ if __name__ == "__main__":
         "time_select(s)": time_selet_list,
         "time_num_parts(s)": time_num_parts_list,
         "time_bucket(s)": time_bucket_list,
-        "time_exe_our(s)": time_exe_list,
+        "time_exe_our(ms)": time_exe_list,
     }
     df = pd.DataFrame(data=table)
     print(df)

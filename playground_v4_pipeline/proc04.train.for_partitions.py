@@ -11,6 +11,7 @@ import time
 import utils
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics.pairwise import cosine_similarity
 
 OUTPUT_DIR = "output"
 MODEL_DIR = "models"
@@ -30,7 +31,8 @@ def train_and_infer(train_file: str,
         "accuracy": [],
         "precision": [],
         "recall": [],
-        "f1": []
+        "f1": [],
+        "cos_sim": [],
     }
 
     for est_name, clf in utils.estimators.items():
@@ -52,6 +54,7 @@ def train_and_infer(train_file: str,
         end_time = time.perf_counter()
         stat["infer_time(s)"].append(end_time - start_time)
         utils.evaluate_into_stat(truth=y_truth, predict=y_predict, stat=stat)
+        stat["cos_sim"].append(cosine_similarity([y_truth], [y_predict]))
 
         # Save model
         utils.save_model(classifier=clf,

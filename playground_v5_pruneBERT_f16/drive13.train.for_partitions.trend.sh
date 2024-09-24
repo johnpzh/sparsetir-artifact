@@ -1,0 +1,1 @@
+python proc13.train.for_partitions.trend.py -t data/output_2279_total.for_partitions.train_set.csv -i data/output_2279_total.for_partitions.infer_set.csv 

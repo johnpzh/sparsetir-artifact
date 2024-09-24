@@ -377,7 +377,8 @@ if __name__ == "__main__":
     mb = 256
     nb = 256
     feat_size = 64
-    num_heads = 12
+    # num_heads = 12
+    num_heads = 1
     m = mb * block_size
     n = nb * block_size
     args = parser.parse_args()

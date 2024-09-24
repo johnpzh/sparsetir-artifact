@@ -19,7 +19,8 @@ from format_algos import (
 from joblib import load
 
 
-NAMES = ['cora', 'citeseer', 'pubmed', 'ppi',  'arxiv', 'proteins', 'reddit']
+# NAMES = ['cora', 'citeseer', 'pubmed', 'ppi',  'arxiv', 'proteins', 'reddit']
+NAMES = ['proteins']
 
 
 def get_X_for_format_selection(g: MTX):
@@ -73,7 +74,7 @@ def predict_format_selection(g: MTX,
     time_s = time_s_end - time_s_start
 
     format = "CELL" if y_pred[0] == 1 else "BCSR"
-    print(f"name: {name} format: {format} time(s): {time_s}")
+    print(f"name: {g.name} format: {format} time(s): {time_s}")
 
     return format, time_s
 
@@ -91,7 +92,7 @@ def predict_num_partitions(g: MTX,
     time_s = time_s_end - time_s_start
 
     num_parts = y_pred[0]
-    print(f"name: {name} num_parts: {num_parts} time(s): {time_s}")
+    print(f"name: {g.name} num_parts: {num_parts} time(s): {time_s}")
 
     return num_parts, time_s
 
@@ -124,6 +125,7 @@ if __name__ == "__main__":
     time_exe_list = []
 
     for name in NAMES:
+        print(f"\nGo to name {name} ...")
         # Load the data
         g = MTX(name)
 
@@ -139,7 +141,15 @@ if __name__ == "__main__":
             for num_features in [32, 64, 128, 256, 512]:
                 num_parts, time_parts = predict_num_partitions(g, clf=clf_partition, num_features=num_features)
 
+                # test
+                if name == "ppi":
+                    num_parts = 16
+                if name == "proteins":
+                    num_parts = 32
+                # end test
+
                 # Build buckets
+                print("Configuring ...", flush=True)
                 time_bucket_start = time.perf_counter()
                 cost_model_config = CostModelSettings(feat_size=num_features, num_parts=num_parts)
                 bucket_config = search_bucket_config(g, num_parts, cost_model_config)
@@ -152,7 +162,7 @@ if __name__ == "__main__":
                 x = th.ones((g.num_dst_nodes(), num_features))
                 y_ndarray = g.dot(x.numpy())
                 hyb_format = build_hyb_format(g, bucket_config)
-                print(f"name: {name} feat_size: {num_features} num_partitions: {num_parts} cost_model_config: {cost_model_config} bucket_config: {bucket_config}", flush=True)
+                # print(f"name: {name} feat_size: {num_features} num_partitions: {num_parts} cost_model_config: {cost_model_config} bucket_config: {bucket_config}", flush=True)
                 try:
                     exe_time = bench_hyb_with_config(g,
                                             x,
@@ -164,7 +174,7 @@ if __name__ == "__main__":
                                             coarsening_factor=2,
                                             num_col_parts=num_parts,
                                             use_implicit_unroll=True)
-                    exe_time = float(f"{exe_time}")
+                    print(f"name: {name} format: {format} feat_size: {num_features} num_partitions: {num_parts} cost_model_config: {cost_model_config} bucket_config: {bucket_config} exe_time: {exe_time}", flush=True)
                 except Exception as e:
                     exe_time = math.inf
                     print(e, file=sys.stderr)
@@ -180,12 +190,16 @@ if __name__ == "__main__":
                 time_exe_list.append(exe_time)
         else:
             # Not use CELL format
+            format = "BSR"
             # feat_size = 32
             for num_features in [32, 64, 128, 256, 512]:
                 # mtx = MTX(name)
                 num_src = g.num_src_nodes()
                 num_dst = g.num_dst_nodes()
-                assert num_src == num_dst, f"Error: matrix {name} is not sqaure ({num_src} x {num_dst})."
+                # assert num_src == num_dst, f"Error: matrix {name} is not sqaure ({num_src} x {num_dst})."
+                if num_src != num_dst:
+                    num_src = max(num_src, num_dst)
+                    num_dst = num_src
 
                 # Block size
                 bsize = 32
@@ -201,7 +215,7 @@ if __name__ == "__main__":
                         bsr_weight = g.tobsr_with_padding(shape=(num_src, num_dst), blocksize=(bsize, bsize))
                         # print(f"g: {g.coo_mtx.toarray()}")
                         # print(f"bsr_weight: {bsr_weight.toarray()}")
-                        print(f"g.shape: ({g.num_dst_nodes(), g.num_src_nodes()}) nnz: {g.num_edges()}")
+                        print(f"g.shape: ({g.num_src_nodes(), g.num_dst_nodes()}) nnz: {g.num_edges()}")
                         print(f"bsr_weight.shape: ({bsr_weight.shape[0], bsr_weight.shape[1]}) nnz: {bsr_weight.nnz} size: {bsr_weight.size}")
 
                         x = th.rand(bsr_weight.shape[1], num_features).half()
@@ -211,7 +225,7 @@ if __name__ == "__main__":
                         print(f"name: {name} exe_time: {exe_time}")
                         # print(f"mtx_csr: {mtx_csr}")
                         # formats_list.append("BSR")
-                        format = "BSR"
+                        # format = "BSR"
                         # blocksizes_list.append(bsize)
                         # time_exe_list.append(exe_time)
                     else:
@@ -223,6 +237,7 @@ if __name__ == "__main__":
                     try:
                         # BSR is too large to be handled.
                         # Try CSR instead.
+                        format = "CSR"
                         x = th.rand((g.num_dst_nodes(), num_features))
                         # y_golden = dgl.ops.copy_u_sum(g, x)
                         y_ndarray = g.dot(x.numpy())
@@ -233,7 +248,7 @@ if __name__ == "__main__":
                                             coarsening_factor=2)
                         print(f"name: {name} exe_time: {exe_time}")
                         # formats_list.append("CSR")
-                        format = "CSR"
+                        # format = "CSR"
                         # blocksizes_list.append(0)
                         # time_exe_list.append(exe_time)
                     except Exception as e2:
@@ -263,7 +278,7 @@ if __name__ == "__main__":
         "time_select(s)": time_selet_list,
         "time_num_parts(s)": time_num_parts_list,
         "time_bucket(s)": time_bucket_list,
-        "time_exe_our(s)": time_exe_list,
+        "time_exe_our(ms)": time_exe_list,
     }
 
     df = pd.DataFrame(data=table)

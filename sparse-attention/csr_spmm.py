@@ -7,7 +7,8 @@ from sparsetir_artifact import profile_pytorch_ms
 
 
 def test_csr_spmm(pattern: str):
-    num_heads = 12
+    # num_heads = 12
+    num_heads = 1
     if pattern == "pixelfly":
         csr = create_pixelfly(1, 4096 // 16, fmt="csr", block_size=16)
     elif pattern == "longformer":

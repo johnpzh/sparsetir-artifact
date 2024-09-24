@@ -1,0 +1,1 @@
+python proc12.train.for_selection.trend.py -t data/output_2279_total.for_selection.train_set.csv -i data/output_2279_total.for_selection.infer_set.csv 
