@@ -12,15 +12,17 @@ import math
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Plot")
-    parser.add_argument("input", type=str, help="data csv file")
+    parser = argparse.ArgumentParser(f"{sys.argv[0]}")
+    parser.add_argument("input_selection", type=str, help="data csv file for Selection")
+    parser.add_argument("input_partitions", type=str, help="data csv file for Partitions")
     # parser.add_argument("--infer-file", "-i", type=str, help="test csv file for prediction")
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(-1)
     args = parser.parse_args()
 
-    input_file = args.input
+    input_file_selection = args.input_selection
+    input_file_partitions = args.input_partitions
 
     # Fonts and Colors
     plt.rcParams["font.size"] = 40
@@ -31,13 +33,13 @@ if __name__ == "__main__":
     # cmap = mpl.colormaps['cividis']
     cmap = mpl.colormaps['tab20']
     # cmap = mpl.colormaps['tab20c']
-    num_bars = 1
+    num_bars = 7
     colors = np.flip(cmap(np.linspace(0, 1, num_bars)), axis=0)
 
 
     # Prepare the data
-    # table = get_numbers_for_each_name(input_file)
-    table = pd.read_csv(input_file)
+    table_selection = pd.read_csv(input_file_selection)
+    table_partitions = pd.read_csv(input_file_partitions)
 
     # sys.exit(-1)
     # Only plot the first 5 matrices, others have Seg Fault
@@ -47,8 +49,10 @@ if __name__ == "__main__":
     # SparseTIR_t = table["SparseTIR"]
     # STile_t = table["STile"]
     # LiteForm_t = table["LiteForm"]
-    train_data_size = table["data_size"]
-    predict_accuracy = table["predict_accuracy"]
+    train_data_size_s = table_selection["data_size"]
+    predict_accuracy_s = table_selection["predict_accuracy"]
+    train_data_size_p = table_partitions["data_size"]
+    predict_accuracy_p = table_partitions["predict_accuracy"]
 
     # Bar width and locations
     # width = 0.17
@@ -74,7 +78,8 @@ if __name__ == "__main__":
     # # Add speedup=1 horizental line
     # axs.axhline(y=1, color='black', linestyle="dashed", alpha=0.4)
 
-    axs.plot(train_data_size, predict_accuracy, label="Number of Partitions", color=colors[0], linewidth=6)
+    axs.plot(train_data_size_s, predict_accuracy_s, label="Format Selection", color=colors[4], linewidth=6)
+    axs.plot(train_data_size_p, predict_accuracy_p, label="Number of Partitions", color=colors[6], linewidth=6)
     # rects1 = axs.bar(bars1, SparseTIR_t, width=width, label="SparseTIR Autotune", color=colors[0])
     # rects2 = axs.bar(bars2, STile_t, width=width, label="STile Search", color=colors[1])
     # rects3 = axs.bar(bars3, LiteForm_t, width=width, label="LiteForm Train+Infer", color=colors[2])
@@ -110,10 +115,10 @@ if __name__ == "__main__":
 
     # Save the plot
     # baseline = os.path.splitext()
-    fig_name_png=F"{os.path.splitext(input_file)[0]}.accuracy_partitions.png"
+    fig_name_png=F"{os.path.splitext(sys.argv[0])[0]}.selection_and_partitions.png"
     plt.savefig(fig_name_png, dpi=300, bbox_inches="tight")
 
-    fig_name_pdf=F"{os.path.splitext(input_file)[0]}.accuracy_partitions.pdf"
+    fig_name_pdf=F"{os.path.splitext(sys.argv[0])[0]}.selection_and_partitions.pdf"
     plt.savefig(fig_name_pdf, dpi=300, bbox_inches="tight")
 
     # plt.show()

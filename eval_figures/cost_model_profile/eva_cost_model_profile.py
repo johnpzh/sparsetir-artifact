@@ -119,7 +119,8 @@ if __name__ == "__main__":
     # bars3 = [x + 1 * width for x in bars]
 
     # Plot the bars
-    fig, axs1 = plt.subplots(figsize=(16, 12))
+    # fig, axs1 = plt.subplots(figsize=(16, 12))
+    fig, axs1 = plt.subplots(figsize=(16, 9))
     # fig, axs = plt.subplots(figsize=(32, 9))
 
     # Y grid only
@@ -157,7 +158,7 @@ if __name__ == "__main__":
     # axs2.tick_params(axis="y", labelcolor=colors[1])
 
     axs1.set_xlabel("Maximum bucket width", fontsize=40)
-    axs1.legend(loc='best', fontsize=40, ncol=1)
+    axs1.legend(loc='best', fontsize=34, ncol=1)
     # axs.legend(loc='upper left', fontsize=20, ncol=1)
     # axs.legend(loc='upper left')
     

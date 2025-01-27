@@ -105,7 +105,8 @@ if __name__ == "__main__":
     bars3 = [x + 1 * width for x in bars]
 
     # Plot the bars
-    fig, axs = plt.subplots(figsize=(16, 12))
+    # fig, axs = plt.subplots(figsize=(16, 12))
+    fig, axs = plt.subplots(figsize=(16, 9))
     # fig, axs = plt.subplots(figsize=(32, 9))
 
     # Y grid only

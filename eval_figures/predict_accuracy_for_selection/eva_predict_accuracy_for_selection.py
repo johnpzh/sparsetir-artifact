@@ -108,7 +108,8 @@ if __name__ == "__main__":
     # bars3 = [x + 1 * width for x in bars]
 
     # Plot the bars
-    fig, axs = plt.subplots(figsize=(16, 12))
+    # fig, axs = plt.subplots(figsize=(16, 12))
+    fig, axs = plt.subplots(figsize=(16, 9))
     # fig, axs = plt.subplots(figsize=(32, 9))
 
     # Y grid only
@@ -126,7 +127,7 @@ if __name__ == "__main__":
 
     # Set axis
     axs.tick_params(direction="in")
-    axs.set_ylabel("Prediction accuracy for format selection", fontsize=35)
+    axs.set_ylabel("Prediction accuracy for format selection", fontsize=26)
     axs.set_ylim(bottom=0.7, top=1.0)
     axs.set_xlim(left=0)
     # axs.set_yscale("log")
