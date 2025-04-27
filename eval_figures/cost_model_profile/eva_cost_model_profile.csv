@@ -1,0 +1,6 @@
+name,format,feat_size,num_parts,max_bucket_width,cost,time_select(s),time_num_parts(s),time_bucket(s),time_exe_our(ms),Compute Throughput(%),Memory Throughput(%)
+reddit,CELL,512,32,32,4746581568,0,0,330.4680879,83.72789001,50.17,76.56
+reddit,CELL,512,32,64,3862604160,0,0,368.7883404,81.23548126,51.52,74.03
+reddit,CELL,512,32,128,3577822464,0,0,345.4653715,80.2781601,54.52,70.55
+reddit,CELL,512,32,256,3546141696,0,0,348.6275515,80.06787872,56.17,70.33
+reddit,CELL,512,32,512,3598204928,0,0,355.7124202,92.52648163,54.61,71.66

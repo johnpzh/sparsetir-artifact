@@ -1,0 +1,2 @@
+name,format,feat_size,num_parts,time_select(s),time_num_parts(s),time_bucket(s),time_exe_our(ms)
+PixelatedButterfly,CELL,64,1,0.005676204338669777,0.0050841402262449265,0.010489370673894882,0.00939081

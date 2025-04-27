@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import pandas as pd
 from palettable.colorbrewer.qualitative import Set2_8
 from scipy.stats import gmean
@@ -323,7 +324,17 @@ if __name__ == "__main__":
     # Set axis
     axs.tick_params(direction="in")
     axs.set_ylabel("Normalized Speedup over SparseTIR", fontsize=28)
-    axs.set_ylim(bottom=0, top=6)
+    axs.set_ylim(bottom=0.1, top=10)
+
+    # Set y-axis to log scale
+    axs.set_yscale('log', base=2)
+    # Use ScalarFormatter to show decimal numbers instead of exponential notation
+    axs.yaxis.set_major_formatter(ticker.ScalarFormatter())
+    axs.ticklabel_format(axis='y', style='plain')
+    # Optional: Ensure no minor ticks if you only want major ticks
+    axs.yaxis.set_minor_locator(plt.NullLocator())
+    axs.set_yticks([0.12, 0.25, 0.5, 1, 2, 4, 8])
+
     axs.set_xlabel("Number of rows of matrices", fontsize=40)
     axs.set_xscale("log")
     # axs.set_ylim(bottom=1.0, top=2.3)

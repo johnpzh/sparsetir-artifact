@@ -2,15 +2,22 @@
 *.npz
 *.log
 *.err
-*.csv
-*.pdf
+# *.csv
+# *.pdf
 *.dat
 .vscode/
 *.pyc
 __pycache__/
 *.egg-info/
+
+# data
 data
+
+# Models
 *.joblib
+
+# Output
+output*/
 
 # Save some special files
 !playground_v4_pipeline/data

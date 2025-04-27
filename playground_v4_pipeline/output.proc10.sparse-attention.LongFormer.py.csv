@@ -1,0 +1,2 @@
+name,format,feat_size,num_parts,time_select(s),time_num_parts(s),time_bucket(s),time_exe_our(ms)
+LongFormer,CELL,64,1,0.005403028801083565,0.004995917901396751,0.010246258229017258,0.01110555

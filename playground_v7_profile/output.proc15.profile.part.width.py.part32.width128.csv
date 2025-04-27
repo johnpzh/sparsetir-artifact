@@ -1,0 +1,2 @@
+name,format,feat_size,num_parts,max_bucket_width,cost,time_select(s),time_num_parts(s),time_bucket(s),time_exe_our(ms)
+reddit,CELL,512,32,128,3577822464.0,0,0,315.7469628956169,1986.0870187399998
